@@ -3,7 +3,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // ─── 定数・設定 ──────────────────────────────────
-let API_DAILY_LIMIT = 100;            // 1日のAPI呼び出し上限（サーバーから動的取得）
+let API_DAILY_LIMIT = 1000;           // 1日のAPI呼び出し上限（サーバーから動的取得）
 const API_WARNING_RATIO = 0.8;       // API上限の警告表示閾値（80%で黄色）
 const TARGET_BOX_RATIO = 0.6;        // ターゲットボックスの映像比率（60%）
 const STABILITY_THRESHOLD = 30;      // 安定判定フレーム数（約1秒@30fps）

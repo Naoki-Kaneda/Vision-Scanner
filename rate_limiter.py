@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # ─── 設定 ──────────────────────────────────────
 REDIS_URL = os.getenv("REDIS_URL", "")
 RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "20"))
-RATE_LIMIT_DAILY = int(os.getenv("RATE_LIMIT_DAILY", "100"))
+RATE_LIMIT_DAILY = int(os.getenv("RATE_LIMIT_DAILY", "1000"))
 
 
 def _seconds_until_midnight():

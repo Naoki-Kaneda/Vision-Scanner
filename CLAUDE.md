@@ -96,7 +96,7 @@ pip-audit
 | `REDIS_URL` | No | Redisレート制限用（未設定=インメモリ） |
 | `ALLOWED_ORIGINS` | No | CORS許可Origin（カンマ区切り） |
 | `RATE_LIMIT_PER_MINUTE` | No | 分間上限（デフォルト20） |
-| `RATE_LIMIT_DAILY` | No | 日次上限（デフォルト100） |
+| `RATE_LIMIT_DAILY` | No | 日次上限（デフォルト1000） |
 
 ## コーディング規約
 
