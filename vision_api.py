@@ -225,6 +225,7 @@ def detect_content(image_b64, mode="text"):
 
         result = response.json()
         responses = result.get("responses", [])
+        logger.info("Vision API レスポンス keys: %s", list(responses[0].keys()) if responses else "empty")
         if not responses:
             return {"ok": True, "data": [], "image_size": None, "error_code": None, "message": None}
 
@@ -245,9 +246,11 @@ def detect_content(image_b64, mode="text"):
 
         if mode == "text":
             data, image_size = _parse_text_response(response_item)
+            logger.info("テキスト検出結果: %d件, image_size=%s", len(data), image_size)
         else:
             data = _parse_object_response(response_item)
             image_size = None  # 物体モードは正規化座標（0〜1）を使用
+            logger.info("物体検出結果: %d件", len(data))
 
         return {"ok": True, "data": data, "image_size": image_size, "error_code": None, "message": None}
 
@@ -274,6 +277,10 @@ def _parse_text_response(response_data):
             image_size: [width, height] ピクセル座標の基準サイズ
     """
     text_annotations = response_data.get("textAnnotations", [])
+    logger.info("textAnnotations件数: %d", len(text_annotations))
+    if text_annotations:
+        full_text = text_annotations[0].get("description", "")
+        logger.info("OCR全文テキスト（先頭100文字）: %s", full_text[:100])
     if not text_annotations:
         return [], None
 

@@ -258,31 +258,18 @@ function updateSourceButtons() {
 // スキャン・安定化検出
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/** スキャンの開始/停止を切り替える（チャタリング防止付き）。 */
+/** スキャンの開始/停止を切り替える（チャタリング防止: タイムスタンプガード）。 */
 let lastToggleTime = 0;
 function toggleScanning() {
     const now = Date.now();
-    if (now - lastToggleTime < 400) {
-        console.log('[toggleScanning] チャタリング防止: 無視');
-        return;
-    }
+    if (now - lastToggleTime < 800) return;
     lastToggleTime = now;
-    console.log('[toggleScanning] クリック検出, isScanning:', isScanning);
-    isScanning ? stopScanning() : startScanning();
+    // isScanning または isPausedByError（エラー再試行待ち）なら停止
+    (isScanning || isPausedByError) ? stopScanning() : startScanning();
 }
 
 /** スキャンを開始し、安定化検出ループを起動する。 */
 function startScanning() {
-    console.log('[startScanning] DOM状態:', {
-        videoContainer: !!videoContainer,
-        statusDot: !!statusDot,
-        statusText: !!statusText,
-        stabilityBarContainer: !!stabilityBarContainer,
-        stabilityBarFill: !!stabilityBarFill,
-        videoWidth: video ? video.videoWidth : 'null',
-        videoSrc: video ? !!video.srcObject : 'null',
-    });
-
     // エラー再試行タイマーが残っていればクリア（2重ループ防止）
     isPausedByError = false;
     if (retryTimerId) {
@@ -302,7 +289,6 @@ function startScanning() {
     if (stabilityBarFill) stabilityBarFill.style.width = '0%';
 
     scanFrameCount = 0;
-    console.log('[startScanning] ボタン変更完了:', btnScan.className, '| テキスト:', btnScan.textContent.trim());
     requestAnimationFrame(scanLoop);
 }
 
@@ -330,9 +316,6 @@ let scanFrameCount = 0;
 function scanLoop() {
     if (!isScanning) return;
     scanFrameCount++;
-    if (scanFrameCount % 60 === 1) {
-        console.log('[scanLoop] フレーム:', scanFrameCount, '安定度:', stabilityCounter, 'videoWidth:', video.videoWidth);
-    }
     checkStabilityAndCapture();
     requestAnimationFrame(scanLoop);
 }
@@ -505,10 +488,7 @@ function drawBoundingBoxes(data, imageSize) {
 
 /** ターゲットボックス内の映像をキャプチャしてAPIに送信する。 */
 async function captureAndAnalyze() {
-    if (!video.videoWidth) return;
-    if (isAnalyzing) return;  // 前回のAPI呼び出し中は新しいキャプチャをスキップ
-    if (isApiLimitReached()) return;
-
+    if (!video.videoWidth || isAnalyzing || isApiLimitReached()) return;
     isAnalyzing = true;
     clearOverlay();
 
@@ -748,12 +728,6 @@ function init() {
     updateMirrorState();
     loadApiUsage();
     loadProxyConfig();
-
-    console.log('[init] 完了:', {
-        btnScanDisabled: btnScan.disabled,
-        apiCallCount: apiCallCount,
-        enforceLimit: ENFORCE_CLIENT_DAILY_LIMIT,
-    });
 }
 
 document.addEventListener('DOMContentLoaded', init);

@@ -9,6 +9,10 @@ import uuid
 import logging
 from threading import Lock
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 logger = logging.getLogger(__name__)
 
 # ─── 設定 ──────────────────────────────────────

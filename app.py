@@ -20,8 +20,11 @@ load_dotenv()
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    force=True,  # 既存のハンドラを上書きして確実にログ出力
 )
 logger = logging.getLogger(__name__)
+# werkzeug リクエストログを明示的に有効化
+logging.getLogger("werkzeug").setLevel(logging.INFO)
 
 FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
 MAX_IMAGE_SIZE = 5 * 1024 * 1024          # 5MB（Base64デコード後）
