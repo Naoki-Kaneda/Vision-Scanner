@@ -34,15 +34,21 @@ venv\Scripts\Activate.ps1   # Windows (PowerShell)
 pip install -r requirements.txt
 ```
 
-### 環境変数の設定
+### 3. 環境変数の設定
 
-`.env.example` をコピーして `.env` を作成：
+`.env.example` をコピーして `.env` ファイルを作成し、APIキーを設定してください。
 
+**Windows (PowerShell):**
+```powershell
+Copy-Item .env.example .env
+```
+
+**macOS / Linux:**
 ```bash
 cp .env.example .env
 ```
 
-`.env` を編集してAPIキーを設定：
+`.env` ファイルを開き、`VISION_API_KEY` にGoogle Cloud Vision APIのキーを入力してください。
 
 ```env
 # 必須: Google Cloud Vision APIキー
@@ -58,15 +64,47 @@ VERIFY_SSL=true
 FLASK_DEBUG=false
 ```
 
-### 起動
+### 4. 開発用ツールのインストール（任意）
+
+テストや静的解析を行う場合は追加パッケージをインストールします。
 
 ```bash
+pip install -r requirements-dev.txt
+```
+
+## 🚀 使い方
+
+### アプリケーションの起動
+
+**Windows (PowerShell):**
+```powershell
 python app.py
 ```
 
-ブラウザで http://localhost:5000 にアクセス。
+**macOS / Linux:**
+```bash
+python3 app.py
+```
 
-## 使い方
+ブラウザで `http://localhost:5000` にアクセスしてください。
+
+### プロキシ環境下での利用
+
+社内プロキシ等が必要な場合は `.env` の `PROXY_URL` を設定してください。
+
+一時的にプロキシを無効化したい場合（社外ネットワーク利用時など）は、環境変数 `NO_PROXY_MODE` を使用できます。
+
+**Windows (PowerShell):**
+```powershell
+$env:NO_PROXY_MODE="true"; python app.py
+```
+
+**macOS / Linux:**
+```bash
+NO_PROXY_MODE="true" python3 app.py
+```
+
+### 操作方法
 
 1. **カメラを許可** → 映像が表示されます
 2. **「スタート」ボタン**を押す → スキャン開始

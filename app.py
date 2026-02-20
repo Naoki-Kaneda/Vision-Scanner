@@ -7,15 +7,17 @@ import os
 import base64
 import logging
 import time
+from threading import Lock
 from collections import defaultdict
 
+# メモリリーク対策: cachetoolsを必須とする（requirements.txtに追加済み）
 try:
     from cachetools import TTLCache
-    _USE_TTL_CACHE = True
 except ImportError:
-    _USE_TTL_CACHE = False
+    raise ImportError("cachetools がインストールされていません。pip install -r requirements.txt を実行してください。")
 
 from flask import Flask, render_template, request, jsonify
+from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
 from vision_api import detect_content
 
@@ -36,14 +38,12 @@ VALID_MODES = {"text", "object"}
 RATE_LIMIT_PER_MINUTE = 20  # 1分あたりの最大リクエスト数
 RATE_LIMIT_DAILY = 100      # 1日あたりの最大リクエスト数
 
-# メモリリーク対策: TTLCacheで上限付きIPキャッシュ（cachetools未導入時はdefaultdict）
-if _USE_TTL_CACHE:
-    # TTL=86400秒（1日）、最大10000 IP
-    rate_limit_store = TTLCache(maxsize=10000, ttl=90)   # 1分半のスライドウィンドウ用
-    daily_count_store = TTLCache(maxsize=10000, ttl=86400)  # 1日TTL
-else:
-    rate_limit_store = defaultdict(list)
-    daily_count_store = defaultdict(lambda: {"date": "", "count": 0})
+# TTL=86400秒（1日）、最大10000 IP
+rate_limit_store = TTLCache(maxsize=10000, ttl=90)   # 1分半のスライドウィンドウ用
+daily_count_store = TTLCache(maxsize=10000, ttl=86400)  # 1日TTL
+
+# スレッドセーフな操作のためのロック
+rate_limit_lock = Lock()
 
 
 def is_rate_limited(client_ip):
@@ -56,17 +56,18 @@ def is_rate_limited(client_ip):
     now = time.time()
     today = time.strftime("%Y-%m-%d")
 
-    daily = daily_count_store.get(client_ip, {"date": "", "count": 0})
-    if daily.get("date") != today:
-        daily = {"date": today, "count": 0}
+    with rate_limit_lock:
+        daily = daily_count_store.get(client_ip, {"date": "", "count": 0})
+        if daily.get("date") != today:
+            daily = {"date": today, "count": 0}
 
-    if daily["count"] >= RATE_LIMIT_DAILY:
-        return True, f"1日あたりのAPI上限({RATE_LIMIT_DAILY}回)に達しました"
+        if daily["count"] >= RATE_LIMIT_DAILY:
+            return True, f"1日あたりのAPI上限({RATE_LIMIT_DAILY}回)に達しました"
 
-    timestamps = list(rate_limit_store.get(client_ip, []))
-    recent = [t for t in timestamps if now - t < 60]
-    if len(recent) >= RATE_LIMIT_PER_MINUTE:
-        return True, f"リクエスト頻度が高すぎます（上限: {RATE_LIMIT_PER_MINUTE}回/分）"
+        timestamps = list(rate_limit_store.get(client_ip, []))
+        recent = [t for t in timestamps if now - t < 60]
+        if len(recent) >= RATE_LIMIT_PER_MINUTE:
+            return True, f"リクエスト頻度が高すぎます（上限: {RATE_LIMIT_PER_MINUTE}回/分）"
 
     return False, ""
 
@@ -78,20 +79,23 @@ def record_request(client_ip):
     now = time.time()
     today = time.strftime("%Y-%m-%d")
 
-    # 分却ウィンドウへ追加
-    timestamps = list(rate_limit_store.get(client_ip, []))
-    rate_limit_store[client_ip] = [t for t in timestamps if now - t < 60] + [now]
+    with rate_limit_lock:
+        # 分却ウィンドウへ追加
+        timestamps = list(rate_limit_store.get(client_ip, []))
+        rate_limit_store[client_ip] = [t for t in timestamps if now - t < 60] + [now]
 
-    # 日次カウント加算
-    daily = daily_count_store.get(client_ip, {"date": "", "count": 0})
-    if daily.get("date") != today:
-        daily = {"date": today, "count": 0}
-    daily["count"] += 1
-    daily_count_store[client_ip] = daily
+        # 日次カウント加算
+        daily = daily_count_store.get(client_ip, {"date": "", "count": 0})
+        if daily.get("date") != today:
+            daily = {"date": today, "count": 0}
+        daily["count"] += 1
+        daily_count_store[client_ip] = daily
 
 
 # ─── アプリケーション初期化 ─────────────────────
 app = Flask(__name__)
+# プロキシ配下でのIP取得を正しく行う（X-Forwarded-For対応）
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 
 # ─── ルーティング ────────────────────────────────

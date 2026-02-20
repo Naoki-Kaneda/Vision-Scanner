@@ -26,6 +26,9 @@ let isScanning = false;
 let currentSource = 'camera';
 let currentMode = 'text';
 let isMirrored = false;
+let isPausedByError = false;  // エラーによる一時停止状態
+let retryTimerId = null;      // 再試行用タイマーID
+let lastFrameTime = 0;
 let apiCallCount = 0;
 let videoDevices = [];
 let currentDeviceIndex = 0;
@@ -205,6 +208,11 @@ function startScanning() {
 /** スキャンを停止してUIをリセットする。 */
 function stopScanning() {
     isScanning = false;
+    isPausedByError = false;
+    if (retryTimerId) {
+        clearTimeout(retryTimerId);
+        retryTimerId = null;
+    }
     btnScan.innerHTML = '<span class="icon">▶</span> Start';
     btnScan.classList.remove('scanning');
     document.querySelector('.video-container').classList.remove('scanning');
@@ -331,29 +339,37 @@ async function captureAndAnalyze() {
             const errorMsg = result.message || `サーバーエラー (${result.error_code})`;
             statusText.innerText = `⚠ ${errorMsg}`;
             console.error(`APIエラー [${result.error_code}]:`, result.message);
-            // 5秒間スキャン中断（連続リトライ防止）
-            isScanning = false;
-            setTimeout(() => {
-                if (!isScanning) {
-                    isScanning = true;
-                    statusText.innerText = '静止を待っています...';
-                    requestAnimationFrame(scanLoop);
-                }
-            }, 5000);
+            scheduleRetry();
         }
     } catch (err) {
         // 通信失敗もUIに表示
         statusText.innerText = '⚠ 通信エラー。再試行します...';
         console.error('通信エラー:', err);
-        isScanning = false;
-        setTimeout(() => {
-            if (!isScanning) {
-                isScanning = true;
-                statusText.innerText = '静止を待っています...';
-                requestAnimationFrame(scanLoop);
-            }
-        }, 5000);
+        scheduleRetry();
     }
+}
+
+/**
+ * エラー発生時の再試行スケジュール
+ */
+function scheduleRetry() {
+    if (!isScanning && !isPausedByError) return; // 手動停止済みななら何もしない
+
+    isScanning = false;
+    isPausedByError = true;
+
+    if (retryTimerId) clearTimeout(retryTimerId);
+
+    retryTimerId = setTimeout(() => {
+        retryTimerId = null;
+        // まだエラー停止状態かつ手動停止されていなければ再開
+        if (isPausedByError) {
+            isScanning = true;
+            isPausedByError = false;
+            statusText.innerText = '静止を待っています...';
+            requestAnimationFrame(scanLoop);
+        }
+    }, 5000);
 }
 
 

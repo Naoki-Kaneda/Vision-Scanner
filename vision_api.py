@@ -22,10 +22,13 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-API_KEY = os.getenv("VISION_API_KEY")
 # URLはdetect_content内で構築する（起動時にキーがなくてもNoneStrが埋まる問題を回避）
 API_BASE_URL = "https://vision.googleapis.com/v1/images:annotate"
-PROXY_URL = os.getenv("PROXY_URL", "")
+
+# プロキシ設定（NO_PROXY_MODE=trueならプロキシを無視）
+NO_PROXY_MODE = os.getenv("NO_PROXY_MODE", "false").lower() == "true"
+PROXY_URL = "" if NO_PROXY_MODE else os.getenv("PROXY_URL", "")
+
 VERIFY_SSL = os.getenv("VERIFY_SSL", "true").lower() != "false"
 
 # 許可されるモード値
@@ -35,6 +38,9 @@ VALID_MODES = {"text", "object"}
 if not VERIFY_SSL:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     logger.warning("⚠ SSL検証が無効化されています。本番環境では VERIFY_SSL=true を推奨します。")
+
+if NO_PROXY_MODE:
+    logger.info("ℹ️ NO_PROXY_MODE: プロキシ設定を無視します。")
 
 # ─── HTTPセッション（モジュールレベルで1回だけ作成） ──────
 session = requests.Session()
