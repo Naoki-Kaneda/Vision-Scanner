@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: vision-scanner
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 30
+    envVars:
+      - key: VISION_API_KEY
+        sync: false  # Renderダッシュボードで手動設定
+      - key: ADMIN_SECRET
+        sync: false
+      - key: FLASK_DEBUG
+        value: "false"
+      - key: VERIFY_SSL
+        value: "true"
+      - key: NO_PROXY_MODE
+        value: "true"
+      - key: PYTHON_VERSION
+        value: "3.12.0"
