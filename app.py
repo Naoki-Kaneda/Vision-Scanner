@@ -78,9 +78,12 @@ def add_security_headers(response):
         f"style-src 'self' 'nonce-{nonce}' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' blob: data:; "
-        "media-src 'self' blob:; "
+        "media-src 'self' blob: mediastream:; "
         "connect-src 'self'"
     )
+
+    # カメラ・マイクのアクセスを同一オリジンに限定
+    response.headers["Permissions-Policy"] = "camera=(self), microphone=(self)"
 
     # 相関IDをレスポンスヘッダーに付与（障害調査用）
     if req_id:

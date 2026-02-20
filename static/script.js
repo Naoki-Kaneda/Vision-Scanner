@@ -173,21 +173,38 @@ async function setupCamera() {
             btnSwitchCam.classList.remove('hidden');
         }
 
+        // deviceId が空文字の場合（権限未付与）は exact を使わない
+        const targetId = videoDevices[currentDeviceIndex]?.deviceId;
         const constraints = {
             video: {
-                deviceId: videoDevices.length > 0
-                    ? { exact: videoDevices[currentDeviceIndex].deviceId }
-                    : undefined,
+                deviceId: targetId ? { exact: targetId } : undefined,
                 width: { ideal: CAMERA_WIDTH },
                 height: { ideal: CAMERA_HEIGHT },
             },
         };
 
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        let stream;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (constraintErr) {
+            // exact deviceId で失敗した場合、deviceId なしでリトライ
+            console.warn('指定デバイスでの取得に失敗、フォールバック:', constraintErr.name);
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: { ideal: CAMERA_WIDTH }, height: { ideal: CAMERA_HEIGHT } },
+            });
+        }
+
         video.srcObject = stream;
-        video.onloadedmetadata = () => video.play();
+        await video.play().catch(() => {});
         currentSource = 'camera';
         updateSourceButtons();
+
+        // 権限付与後にデバイスリストを更新（deviceId が取得可能になる）
+        const updated = await navigator.mediaDevices.enumerateDevices();
+        videoDevices = updated.filter(d => d.kind === 'videoinput');
+        if (videoDevices.length > 1) {
+            btnSwitchCam.classList.remove('hidden');
+        }
     } catch (err) {
         console.error('カメラアクセスエラー:', err);
         alert('カメラへのアクセスが拒否されたか、カメラが見つかりません。');
@@ -632,16 +649,14 @@ function setMode(mode) {
 /** アプリケーションを初期化する。 */
 function init() {
     // ─── DOM要素の取得（DOMContentLoaded 保証下で安全に取得） ──
+    videoContainer = document.querySelector('.video-container');
     video = document.getElementById('video-feed');
     canvas = document.getElementById('capture-canvas');
-    ctx = canvas.getContext('2d');
     overlayCanvas = document.getElementById('overlay-canvas');
-    overlayCtx = overlayCanvas.getContext('2d');
     resultList = document.getElementById('result-list');
     btnScan = document.getElementById('btn-scan');
     statusDot = document.getElementById('status-dot');
     statusText = document.getElementById('status-text');
-    videoContainer = document.querySelector('.video-container');
     stabilityBarContainer = document.getElementById('stability-bar-container');
     stabilityBarFill = document.getElementById('stability-bar-fill');
     btnProxy = document.getElementById('btn-proxy');
@@ -651,17 +666,50 @@ function init() {
     btnFile = document.getElementById('btn-file');
     modeText = document.getElementById('mode-text');
     modeObject = document.getElementById('mode-object');
+    const fileInput = document.getElementById('file-input');
+    const btnMirror = document.getElementById('btn-mirror');
+    const btnClear = document.getElementById('btn-clear');
+
+    // 古いテンプレート/キャッシュ混在時のクラッシュ防止
+    if (!canvas && videoContainer) {
+        canvas = document.createElement('canvas');
+        canvas.id = 'capture-canvas';
+        canvas.className = 'hidden';
+        videoContainer.appendChild(canvas);
+    }
+    if (!overlayCanvas && videoContainer) {
+        overlayCanvas = document.createElement('canvas');
+        overlayCanvas.id = 'overlay-canvas';
+        videoContainer.appendChild(overlayCanvas);
+    }
+
+    ctx = canvas ? canvas.getContext('2d') : null;
+    overlayCtx = overlayCanvas ? overlayCanvas.getContext('2d') : null;
+
+    const missing = [];
+    if (!video) missing.push('video-feed');
+    if (!canvas) missing.push('capture-canvas');
+    if (!overlayCanvas) missing.push('overlay-canvas');
+    if (!btnScan) missing.push('btn-scan');
+    if (!fileInput) missing.push('file-input');
+    if (!btnMirror) missing.push('btn-mirror');
+    if (!btnClear) missing.push('btn-clear');
+    if (!ctx || !overlayCtx) missing.push('canvas-context');
+    if (missing.length) {
+        console.error('UI initialization failed. Missing elements:', missing.join(', '));
+        return;
+    }
 
     // ─── イベントリスナー登録（CSP準拠: HTML onclick 属性を排除） ──
     btnCamera.addEventListener('click', () => switchSource('camera'));
     btnSwitchCam.addEventListener('click', toggleCameraDevice);
-    btnFile.addEventListener('click', () => document.getElementById('file-input').click());
-    document.getElementById('file-input').addEventListener('change', handleFileUpload);
-    document.getElementById('btn-mirror').addEventListener('click', toggleMirror);
+    btnFile.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', handleFileUpload);
+    btnMirror.addEventListener('click', toggleMirror);
     modeText.addEventListener('click', () => setMode('text'));
     modeObject.addEventListener('click', () => setMode('object'));
     btnScan.addEventListener('click', toggleScanning);
-    document.getElementById('btn-clear').addEventListener('click', clearResults);
+    btnClear.addEventListener('click', clearResults);
 
     setupCamera();
     updateMirrorState();
