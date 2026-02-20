@@ -151,6 +151,24 @@ class TestInvalidInput:
         data = response.get_json()
         assert data["error_code"] == "IMAGE_TOO_LARGE"
 
+    def test_Nullの画像を拒否する(self, client):
+        """imageフィールドがnullの場合は400を返すこと。"""
+        response = client.post("/api/analyze", json={
+            "image": None,
+            "mode": "text",
+        })
+        assert response.status_code == 400
+        assert response.get_json()["error_code"] == "MISSING_IMAGE"
+
+    def test_空文字の画像を拒否する(self, client):
+        """imageフィールドが空文字の場合は400を返すこと。"""
+        response = client.post("/api/analyze", json={
+            "image": "   ",
+            "mode": "text",
+        })
+        assert response.status_code == 400
+        assert response.get_json()["error_code"] == "MISSING_IMAGE"
+
 
 # ─── API失敗時テスト ──────────────────────────────
 class TestApiFailure:

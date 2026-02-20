@@ -239,7 +239,7 @@ function checkStabilityAndCapture() {
             diff += Math.abs(currentFrameData[i + 1] - lastFrameData[i + 1]);
             diff += Math.abs(currentFrameData[i + 2] - lastFrameData[i + 2]);
         }
-        const avgDiff = diff / (smallCanvas.width * smallCanvas.height);
+        const avgDiff = diff / (motionCanvas.width * motionCanvas.height);
 
         if (avgDiff < MOTION_THRESHOLD) {
             // 安定状態
@@ -301,9 +301,6 @@ async function captureAndAnalyze() {
     const imageData = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
 
     try {
-        apiCallCount++;
-        saveApiUsage();
-
         const response = await fetch('/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -316,6 +313,12 @@ async function captureAndAnalyze() {
         if (response.status === 429) {
             statusText.innerText = `⚠ ${result.message || 'リクエスト制限中'}`;
             return;
+        }
+
+        // 成功時のみカウント加算（失敗時はAPI消費しない）
+        if (result.ok) {
+            apiCallCount++;
+            saveApiUsage();
         }
 
         // 統一レスポンス形式に対応

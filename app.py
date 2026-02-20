@@ -103,8 +103,9 @@ def analyze_endpoint():
 
     data = request.json
 
-    # 画像データの存在チェック
-    if "image" not in data:
+    # 画像データの存在チェック（Nullや空文字も拒否）
+    image_data = data.get("image")
+    if not image_data or not isinstance(image_data, str) or not image_data.strip():
         return jsonify({
             "ok": False, "data": [],
             "error_code": "MISSING_IMAGE",
@@ -121,7 +122,6 @@ def analyze_endpoint():
         }), 400
 
     # data:image/jpeg;base64, プレフィックスを除去
-    image_data = data["image"]
     if "," in image_data:
         image_data = image_data.split(",")[1]
 

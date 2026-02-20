@@ -23,7 +23,8 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 API_KEY = os.getenv("VISION_API_KEY")
-API_URL = f"https://vision.googleapis.com/v1/images:annotate?key={API_KEY}"
+# URLはdetect_content内で構築する（起動時にキーがなくてもNoneStrが埋まる問題を回避）
+API_BASE_URL = "https://vision.googleapis.com/v1/images:annotate"
 PROXY_URL = os.getenv("PROXY_URL", "")
 VERIFY_SSL = os.getenv("VERIFY_SSL", "true").lower() != "false"
 
@@ -37,7 +38,14 @@ if not VERIFY_SSL:
 
 # ─── HTTPセッション（モジュールレベルで1回だけ作成） ──────
 session = requests.Session()
-retry_strategy = Retry(connect=3, backoff_factor=0.5)
+# connectリトライ + HTTPエラーコードの再試行
+retry_strategy = Retry(
+    total=3,
+    connect=3,
+    backoff_factor=0.5,
+    status_forcelist=[429, 500, 502, 503],
+    allowed_methods=["POST"],
+)
 adapter = HTTPAdapter(max_retries=retry_strategy)
 session.mount("http://", adapter)
 session.mount("https://", adapter)
@@ -96,6 +104,8 @@ def detect_content(image_content_base64, mode="text"):
     if not API_KEY:
         raise ValueError("APIキーが未設定です。.envファイルにVISION_API_KEYを設定してください。")
 
+    api_url = f"{API_BASE_URL}?key={API_KEY}"
+
     if mode not in VALID_MODES:
         raise ValueError(f"不正なモード: '{mode}'。許可値: {VALID_MODES}")
 
@@ -121,7 +131,7 @@ def detect_content(image_content_base64, mode="text"):
     }
 
     try:
-        response = session.post(API_URL, json=payload, timeout=15)
+        response = session.post(api_url, json=payload, timeout=15)
 
         if response.status_code != 200:
             logger.error("APIエラー (ステータス %d): %s", response.status_code, response.text)
