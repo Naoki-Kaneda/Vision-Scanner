@@ -10,7 +10,7 @@ import logging
 
 import requests
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from urllib3.util.retry import Retry
 import urllib3
 from dotenv import load_dotenv
 from PIL import Image, ImageEnhance
@@ -19,13 +19,21 @@ from translations import OBJECT_TRANSLATIONS
 
 # ─── 設定 ──────────────────────────────────────
 load_dotenv()
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
 API_KEY = os.getenv("VISION_API_KEY")
 API_URL = f"https://vision.googleapis.com/v1/images:annotate?key={API_KEY}"
 PROXY_URL = os.getenv("PROXY_URL", "")
+VERIFY_SSL = os.getenv("VERIFY_SSL", "true").lower() != "false"
+
+# 許可されるモード値
+VALID_MODES = {"text", "object"}
+
+# SSL検証無効時のみ警告を抑制
+if not VERIFY_SSL:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    logger.warning("⚠ SSL検証が無効化されています。本番環境では VERIFY_SSL=true を推奨します。")
 
 # ─── HTTPセッション（モジュールレベルで1回だけ作成） ──────
 session = requests.Session()
@@ -39,8 +47,8 @@ if PROXY_URL:
     session.proxies = {"http": PROXY_URL, "https": PROXY_URL}
     logger.info("プロキシ設定: %s", PROXY_URL)
 
-# SSL検証を無効化（企業プロキシ環境向け）
-session.verify = False
+# SSL検証設定
+session.verify = VERIFY_SSL
 
 
 # ─── 画像前処理 ──────────────────────────────────
@@ -80,10 +88,16 @@ def detect_content(image_content_base64, mode="text"):
         mode: 'text'（テキスト抽出）または 'object'（物体検出）。
 
     Returns:
-        検出結果の文字列リスト。
+        dict: {"ok": bool, "data": list, "error_code": str|None, "message": str|None}
+
+    Raises:
+        ValueError: modeが不正な場合、またはAPIキー未設定の場合。
     """
     if not API_KEY:
         raise ValueError("APIキーが未設定です。.envファイルにVISION_API_KEYを設定してください。")
+
+    if mode not in VALID_MODES:
+        raise ValueError(f"不正なモード: '{mode}'。許可値: {VALID_MODES}")
 
     # DOCUMENT_TEXT_DETECTIONはTEXT_DETECTIONより高精度
     feature_type = "DOCUMENT_TEXT_DETECTION" if mode == "text" else "LABEL_DETECTION"
@@ -111,22 +125,34 @@ def detect_content(image_content_base64, mode="text"):
 
         if response.status_code != 200:
             logger.error("APIエラー (ステータス %d): %s", response.status_code, response.text)
+            return {
+                "ok": False,
+                "data": [],
+                "error_code": f"API_{response.status_code}",
+                "message": f"Vision APIエラー (ステータス {response.status_code})",
+            }
 
-        response.raise_for_status()
         result = response.json()
-
         responses = result.get("responses", [])
         if not responses:
-            return []
+            return {"ok": True, "data": [], "error_code": None, "message": None}
 
         if mode == "text":
-            return _parse_text_response(responses[0])
+            data = _parse_text_response(responses[0])
         else:
-            return _parse_label_response(responses[0])
+            data = _parse_label_response(responses[0])
 
+        return {"ok": True, "data": data, "error_code": None, "message": None}
+
+    except requests.exceptions.Timeout:
+        logger.error("Vision API タイムアウト")
+        return {"ok": False, "data": [], "error_code": "TIMEOUT", "message": "APIリクエストがタイムアウトしました"}
+    except requests.exceptions.ConnectionError as e:
+        logger.error("Vision API 接続エラー: %s", e)
+        return {"ok": False, "data": [], "error_code": "CONNECTION_ERROR", "message": "API接続に失敗しました"}
     except requests.exceptions.RequestException as e:
         logger.error("Vision API通信エラー: %s", e)
-        return [f"Error: {str(e)}"]
+        return {"ok": False, "data": [], "error_code": "REQUEST_ERROR", "message": str(e)}
 
 
 # ─── レスポンス解析（内部関数） ──────────────────────

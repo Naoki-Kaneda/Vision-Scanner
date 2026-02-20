@@ -452,3 +452,45 @@ video {
 ::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.2);
 }
+
+/* ─── レスポンシブ対応 ──────────────────────── */
+@media (max-width: 768px) {
+    body {
+        height: auto;
+        overflow: auto;
+        padding: 10px;
+    }
+
+    .container {
+        height: auto;
+        width: 100%;
+    }
+
+    .main-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .video-container {
+        max-height: 50vh;
+    }
+
+    .result-panel {
+        min-height: 30vh;
+    }
+
+    header {
+        flex-direction: column;
+        gap: 8px;
+        text-align: center;
+    }
+
+    h1 {
+        font-size: 1.2rem;
+    }
+
+    .primary-btn {
+        padding: 12px;
+        font-size: 0.9rem;
+    }
+}

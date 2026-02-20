@@ -32,6 +32,12 @@ let currentDeviceIndex = 0;
 let lastFrameData = null;
 let stabilityCounter = 0;
 
+// 差分検出用キャンバス（毎フレーム生成せず再利用）
+const motionCanvas = document.createElement('canvas');
+motionCanvas.width = 64;
+motionCanvas.height = 48;
+const motionCtx = motionCanvas.getContext('2d');
+
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // API使用量管理
@@ -220,14 +226,10 @@ function scanLoop() {
 function checkStabilityAndCapture() {
     if (!video.videoWidth) return;
 
-    // 小さなキャンバスでフレーム差分を計算（パフォーマンス最適化）
-    const smallCanvas = document.createElement('canvas');
-    smallCanvas.width = 64;
-    smallCanvas.height = 48;
-    const sCtx = smallCanvas.getContext('2d');
-    sCtx.drawImage(video, 0, 0, smallCanvas.width, smallCanvas.height);
+    // 再利用キャンバスでフレーム差分を計算
+    motionCtx.drawImage(video, 0, 0, motionCanvas.width, motionCanvas.height);
 
-    const currentFrameData = sCtx.getImageData(0, 0, smallCanvas.width, smallCanvas.height).data;
+    const currentFrameData = motionCtx.getImageData(0, 0, motionCanvas.width, motionCanvas.height).data;
     const barFill = document.getElementById('stability-bar-fill');
 
     if (lastFrameData) {
@@ -308,17 +310,24 @@ async function captureAndAnalyze() {
             body: JSON.stringify({ image: imageData, mode: currentMode }),
         });
 
-        const data = await response.json();
+        const result = await response.json();
 
-        if (data.results && data.results.length > 0) {
-            data.results
+        // サーバー側レート制限
+        if (response.status === 429) {
+            statusText.innerText = `⚠ ${result.message || 'リクエスト制限中'}`;
+            return;
+        }
+
+        // 統一レスポンス形式に対応
+        if (result.ok && result.data && result.data.length > 0) {
+            result.data
                 .filter(isValidResult)
                 .forEach(addResultItem);
-        } else if (data.error) {
-            console.error('APIエラー:', data.error);
+        } else if (!result.ok) {
+            console.error(`APIエラー [${result.error_code}]:`, result.message);
         }
     } catch (err) {
-        console.error('解析エラー:', err);
+        console.error('通信エラー:', err);
     }
 }
 
