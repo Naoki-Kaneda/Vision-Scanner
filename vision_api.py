@@ -25,7 +25,6 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 API_KEY = os.getenv("VISION_API_KEY")
-# URLはdetect_content内で構築する（起動時にキーがなくてもNoneStrが埋まる問題を回避）
 API_BASE_URL = "https://vision.googleapis.com/v1/images:annotate"
 
 # プロキシ設定（NO_PROXY_MODE=trueなら初期状態でプロキシを無視）
@@ -192,7 +191,6 @@ def detect_content(image_b64, mode="text", request_id=""):
     if mode not in VALID_MODES:
         raise ValueError(f"不正なモード: '{mode}'。許可値: {VALID_MODES}")
 
-    api_url = f"{API_BASE_URL}?key={API_KEY}"
     feature_type = FEATURE_TYPES[mode]
 
     # テキストモードの場合のみ前処理を適用
@@ -217,7 +215,9 @@ def detect_content(image_b64, mode="text", request_id=""):
     }
 
     try:
-        response = session.post(api_url, json=payload, timeout=API_TIMEOUT_SECONDS)
+        # APIキーはヘッダーで送信（URLパラメータだとプロキシログに記録されるリスク回避）
+        api_headers = {"x-goog-api-key": API_KEY}
+        response = session.post(API_BASE_URL, json=payload, headers=api_headers, timeout=API_TIMEOUT_SECONDS)
 
         if response.status_code != 200:
             logger.error("[%s] APIエラー (ステータス %d): %.500s", request_id, response.status_code, response.text)

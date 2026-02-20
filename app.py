@@ -35,6 +35,12 @@ MAX_IMAGE_SIZE = 5 * 1024 * 1024          # 5MB（Base64デコード後）
 MAX_REQUEST_BODY = 10 * 1024 * 1024       # 10MB（Base64 + JSONオーバーヘッド）
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")  # 管理API認証用シークレット
 
+# 起動時セキュリティチェック
+if not ADMIN_SECRET:
+    logger.warning("ADMIN_SECRET が未設定です。管理API（プロキシ設定変更）は常に403を返します。")
+elif len(ADMIN_SECRET) < 16:
+    logger.warning("ADMIN_SECRET が短すぎます（16文字以上を推奨）。")
+
 # CORS: 許可するOrigin（カンマ区切り）。未設定 = 同一オリジンのみ（デフォルト安全）
 ALLOWED_ORIGINS = [
     o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()
