@@ -133,6 +133,24 @@ pytest tests/ -v
 | 相関ID | 全リクエストに `request_id` を付与（`X-Request-Id` ヘッダー + ログ） |
 | 秘密情報 | `VISION_API_KEY` はログに出力されません（URLパラメータのため） |
 
+### ブランチ保護（CI必須化）
+
+`main` ブランチへのマージ前にCIの全チェックを必須にすることで、壊れたコードの混入を防止します。
+
+**GitHub UIでの設定手順:**
+
+1. リポジトリの **Settings** > **Branches** を開く
+2. **Add branch protection rule** をクリック
+3. **Branch name pattern** に `main` を入力
+4. 以下を有効化:
+   - **Require a pull request before merging**（直接pushを禁止）
+   - **Require status checks to pass before merging**
+     - 必須チェックとして `test (3.11)`, `test (3.12)`, `test (3.13)` を追加
+   - **Require branches to be up to date before merging**（ベースブランチとの最新同期を強制）
+5. **Create** または **Save changes** をクリック
+
+> **注意**: GitHub Free（パブリックリポジトリ）またはTeam以上のプランで利用可能です。
+
 ### 運用監視ポイント
 
 | リスク | 検知方法 | 対処 |
@@ -146,6 +164,23 @@ pytest tests/ -v
 |---------------|------|--------|--------|
 | `GET /healthz` | Liveness（プロセス生存確認） | `200 {"status": "ok"}` | 応答なし |
 | `GET /readyz` | Readiness（処理可能確認） | `200 {"status": "ok"}` | `503 {"status": "not_ready"}` |
+
+`/readyz` は以下の条件で `503` を返します:
+- `VISION_API_KEY` が未設定
+- `REDIS_URL` が設定されているが Redis接続に失敗しインメモリにフォールバックしている
+
+フォールバック時のレスポンス例:
+```json
+{
+  "status": "not_ready",
+  "checks": {
+    "api_key_configured": true,
+    "rate_limiter_backend": "in_memory",
+    "rate_limiter_ok": false
+  },
+  "warnings": ["REDIS_URL が設定されていますが、Redis接続に失敗しインメモリにフォールバックしています"]
+}
+```
 
 ## 既知の制限
 

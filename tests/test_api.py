@@ -531,6 +531,7 @@ class TestHealthChecks:
         assert data["status"] == "ok"
         assert data["checks"]["api_key_configured"] is True
         assert data["checks"]["rate_limiter_backend"] in ("redis", "in_memory")
+        assert data["checks"]["rate_limiter_ok"] is True
 
     @patch("app.API_KEY", "")
     def test_readyzがAPIキー未設定で503を返す(self, client):
@@ -540,3 +541,27 @@ class TestHealthChecks:
         data = response.get_json()
         assert data["status"] == "not_ready"
         assert data["checks"]["api_key_configured"] is False
+
+    @patch("app.REDIS_URL", "redis://localhost:6379")
+    @patch("app.get_backend_type", return_value="in_memory")
+    def test_readyzがRedisフォールバック時に503を返す(self, _mock_backend, client):
+        """REDIS_URL設定済みでインメモリフォールバック時は503+警告を返すこと。"""
+        response = client.get("/readyz")
+        assert response.status_code == 503
+        data = response.get_json()
+        assert data["status"] == "not_ready"
+        assert data["checks"]["rate_limiter_ok"] is False
+        assert "warnings" in data
+        assert len(data["warnings"]) > 0
+        assert "Redis" in data["warnings"][0]
+
+    @patch("app.REDIS_URL", "")
+    @patch("app.get_backend_type", return_value="in_memory")
+    def test_readyzがRedis未設定のインメモリは正常扱い(self, _mock_backend, client):
+        """REDIS_URL未設定でインメモリの場合は意図的なので200を返すこと。"""
+        response = client.get("/readyz")
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "ok"
+        assert data["checks"]["rate_limiter_ok"] is True
+        assert "warnings" not in data

@@ -13,7 +13,10 @@ from flask import Flask, render_template, request, jsonify, g
 from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
 from vision_api import detect_content, get_proxy_status, set_proxy_enabled, VALID_MODES, API_KEY
-from rate_limiter import try_consume_request, release_request, RATE_LIMIT_DAILY, get_backend_type
+from rate_limiter import (
+    try_consume_request, release_request, RATE_LIMIT_DAILY,
+    get_backend_type, REDIS_URL,
+)
 
 # ─── 設定 ──────────────────────────────────────
 load_dotenv()
@@ -204,15 +207,28 @@ def healthz():
 def readyz():
     """Readiness: リクエスト処理可能か（APIキー・バックエンド等の設定チェック）"""
     rate_backend = get_backend_type()
+
+    # REDIS_URL が設定されているのにインメモリにフォールバックしている場合は警告
+    redis_fallback = bool(REDIS_URL) and rate_backend == "in_memory"
+
     checks = {
         "api_key_configured": bool(API_KEY),
         "rate_limiter_backend": rate_backend,
+        "rate_limiter_ok": not redis_fallback,
     }
-    all_ok = bool(API_KEY)
-    return jsonify({
+
+    all_ok = bool(API_KEY) and not redis_fallback
+
+    response_data = {
         "status": "ok" if all_ok else "not_ready",
         "checks": checks,
-    }), 200 if all_ok else 503
+    }
+    if redis_fallback:
+        response_data["warnings"] = [
+            "REDIS_URL が設定されていますが、Redis接続に失敗しインメモリにフォールバックしています"
+        ]
+
+    return jsonify(response_data), 200 if all_ok else 503
 
 
 # ─── ルーティング ────────────────────────────────
