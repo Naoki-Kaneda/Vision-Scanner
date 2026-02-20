@@ -92,17 +92,8 @@ python3 app.py
 
 社内プロキシ等が必要な場合は `.env` の `PROXY_URL` を設定してください。
 
-一時的にプロキシを無効化したい場合（社外ネットワーク利用時など）は、環境変数 `NO_PROXY_MODE` を使用できます。
-
-**Windows (PowerShell):**
-```powershell
-$env:NO_PROXY_MODE="true"; python app.py
-```
-
-**macOS / Linux:**
-```bash
-NO_PROXY_MODE="true" python3 app.py
-```
+プロキシの有効/無効は、画面右上の **"Proxy: ON/OFF"** ボタンでいつでも切り替えられます。
+起動時にコマンドライン引数を指定する必要はありません。
 
 ### 操作方法
 

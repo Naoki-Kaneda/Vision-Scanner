@@ -66,6 +66,57 @@ function saveApiUsage() {
     updateApiCounter();
 }
 
+// ─── プロキシ設定制御 ──────────────────────────────
+let currentProxyEnabled = false;
+
+async function loadProxyConfig() {
+    try {
+        const res = await fetch('/api/config/proxy');
+        if (res.ok) {
+            const data = await res.json();
+            updateProxyButton(data.enabled);
+        }
+    } catch (err) {
+        console.error('プロキシ設定取得エラー:', err);
+    }
+}
+
+async function toggleProxy() {
+    const newState = !currentProxyEnabled;
+    try {
+        const res = await fetch('/api/config/proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: newState }),
+        });
+        if (res.ok) {
+            const data = await res.json();
+            updateProxyButton(data.status.enabled);
+        } else {
+            alert('プロキシ切り替えに失敗しました');
+        }
+    } catch (err) {
+        console.error('プロキシ切り替えエラー:', err);
+        alert('通信エラーが発生しました');
+    }
+}
+
+function updateProxyButton(isEnabled) {
+    currentProxyEnabled = isEnabled;
+    const btn = document.getElementById('btn-proxy');
+    if (!btn) return;
+
+    if (isEnabled) {
+        btn.innerText = 'Proxy: ON';
+        btn.className = 'proxy-badge active';
+        btn.title = 'クリックして無効化';
+    } else {
+        btn.innerText = 'Proxy: OFF';
+        btn.className = 'proxy-badge inactive';
+        btn.title = 'クリックして有効化';
+    }
+}
+
 /** ヘッダーのAPIカウンター表示を更新する。 */
 function updateApiCounter() {
     const counterEl = document.getElementById('api-counter');
@@ -105,6 +156,7 @@ function isApiLimitReached() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // カメラ制御
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 
 /** カメラを初期化してHD映像を取得する。 */
 async function setupCamera() {
@@ -451,6 +503,7 @@ function init() {
     setupCamera();
     updateMirrorState();
     loadApiUsage();
+    loadProxyConfig();
 }
 
-init();
+document.addEventListener('DOMContentLoaded', init);

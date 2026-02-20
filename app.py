@@ -19,7 +19,7 @@ except ImportError:
 from flask import Flask, render_template, request, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
-from vision_api import detect_content
+from vision_api import detect_content, get_proxy_status, set_proxy_enabled
 
 # ─── 設定 ──────────────────────────────────────
 load_dotenv()
@@ -101,8 +101,25 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 # ─── ルーティング ────────────────────────────────
 @app.route("/")
 def index():
-    """メインページを表示する。"""
+    """アプリケーションのメインページを表示する"""
     return render_template("index.html")
+
+
+@app.route("/api/config/proxy", methods=["GET"])
+def get_proxy_config():
+    """現在のプロキシ設定状態を返す"""
+    return jsonify(get_proxy_status())
+
+
+@app.route("/api/config/proxy", methods=["POST"])
+def update_proxy_config():
+    """プロキシ設定を更新する"""
+    data = request.json
+    if not data or "enabled" not in data:
+        return jsonify({"ok": False, "message": "enabledフィールドが必要です"}), 400
+
+    new_status = set_proxy_enabled(bool(data["enabled"]))
+    return jsonify({"ok": True, "status": new_status})
 
 
 @app.route("/api/analyze", methods=["POST"])

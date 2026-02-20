@@ -25,9 +25,17 @@ logger = logging.getLogger(__name__)
 # URLはdetect_content内で構築する（起動時にキーがなくてもNoneStrが埋まる問題を回避）
 API_BASE_URL = "https://vision.googleapis.com/v1/images:annotate"
 
-# プロキシ設定（NO_PROXY_MODE=trueならプロキシを無視）
+# プロキシ設定（NO_PROXY_MODE=trueなら初期状態でプロキシを無視）
 NO_PROXY_MODE = os.getenv("NO_PROXY_MODE", "false").lower() == "true"
-PROXY_URL = "" if NO_PROXY_MODE else os.getenv("PROXY_URL", "")
+_RAW_PROXY_URL = os.getenv("PROXY_URL", "")
+
+
+def _get_active_proxy_config():
+    """現在の設定に基づいてプロキシ辞書を生成する"""
+    if NO_PROXY_MODE or not _RAW_PROXY_URL:
+        return {}
+    return {"http": _RAW_PROXY_URL, "https": _RAW_PROXY_URL}
+
 
 VERIFY_SSL = os.getenv("VERIFY_SSL", "true").lower() != "false"
 
@@ -56,10 +64,37 @@ adapter = HTTPAdapter(max_retries=retry_strategy)
 session.mount("http://", adapter)
 session.mount("https://", adapter)
 
-# プロキシ設定
-if PROXY_URL:
-    session.proxies = {"http": PROXY_URL, "https": PROXY_URL}
-    logger.info("プロキシ設定: %s", PROXY_URL)
+# 初期プロキシ設定適用
+session.proxies = _get_active_proxy_config()
+if session.proxies:
+    logger.info("プロキシ設定: %s", _RAW_PROXY_URL)
+
+
+# ─── プロキシ設定API ─────────────────────────────
+def get_proxy_status():
+    """現在のプロキシ設定状態を返す"""
+    return {
+        "enabled": not NO_PROXY_MODE and bool(_RAW_PROXY_URL),
+        "url": _RAW_PROXY_URL if not NO_PROXY_MODE else "",
+        "configured_url": _RAW_PROXY_URL
+    }
+
+
+def set_proxy_enabled(enabled: bool):
+    """
+    プロキシの有効/無効を切り替える
+    Args:
+        enabled (bool): Trueならプロキシ有効（PROXY_URLを使用）、Falseなら無効
+    """
+    global NO_PROXY_MODE
+    NO_PROXY_MODE = not enabled
+    
+    config = _get_active_proxy_config()
+    session.proxies = config
+    
+    status = "有効" if enabled else "無効"
+    logger.info("プロキシ設定を変更しました: %s", status)
+    return get_proxy_status()
 
 # SSL検証設定
 session.verify = VERIFY_SSL
