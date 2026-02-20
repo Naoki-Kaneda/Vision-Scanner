@@ -266,31 +266,19 @@ video {
 /* ─── 安定化プログレスバー（MD3 Linear Progress） ─ */
 .stability-bar-container {
     position: absolute;
-    bottom: 52px;
-    left: 50%;
-    transform: translateX(-50%);
+    top: 0;
+    left: 0;
+    width: 100%;
     z-index: 20;
-    width: 60%;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
-}
-
-.stability-help {
-    color: var(--md-on-surface);
-    font-size: 0.75rem;
-    background: var(--md-surface-container-highest);
-    padding: 4px 12px;
-    border-radius: var(--md-shape-corner-full);
-    line-height: 1.4;
 }
 
 .stability-bar-track {
     width: 100%;
     height: 4px;
-    background: var(--md-surface-container-highest);
-    border-radius: 2px;
+    background: rgba(168, 199, 250, 0.15);
     overflow: hidden;
 }
 
@@ -298,13 +286,22 @@ video {
     width: 0%;
     height: 100%;
     background: var(--md-primary);
-    border-radius: 2px;
     transition: width 0.15s linear;
 }
 
 .stability-bar-fill.captured {
     background: #81C784;
     transition: width 0.05s linear;
+}
+
+.stability-help {
+    color: var(--md-on-surface);
+    font-size: 0.75rem;
+    background: var(--md-surface-container-highest);
+    padding: 4px 12px;
+    border-radius: 0 0 8px 8px;
+    line-height: 1.4;
+    opacity: 0.9;
 }
 
 /* ─── 映像内ツールバー ──────────────────────── */

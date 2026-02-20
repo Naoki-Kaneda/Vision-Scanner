@@ -282,7 +282,7 @@ function startScanning() {
     btnScan.classList.add('scanning');
     if (videoContainer) videoContainer.classList.add('scanning');
     if (statusDot) statusDot.classList.add('active');
-    if (statusText) statusText.textContent = '静止を待っています...';
+    if (statusText) statusText.textContent = 'スキャン中';
 
     // 安定化バーを表示
     if (stabilityBarContainer) stabilityBarContainer.classList.remove('hidden');
@@ -350,11 +350,8 @@ function checkStabilityAndCapture() {
                 stabilityBarFill.style.width = progress + '%';
                 stabilityBarFill.classList.remove('captured');
             }
-            // 状態遷移時のみテキスト更新（毎フレーム更新しない）
-            if (lastStabilityState !== 'stabilizing') {
-                lastStabilityState = 'stabilizing';
-                if (statusText) statusText.textContent = '安定検出中...';
-            }
+            // テキストは変更しない（プログレスバーのみで進捗を表示）
+            lastStabilityState = 'stabilizing';
 
             if (stabilityCounter >= STABILITY_THRESHOLD) {
                 // 安定完了 → キャプチャ実行
@@ -363,7 +360,7 @@ function checkStabilityAndCapture() {
                     stabilityBarFill.style.width = '100%';
                     stabilityBarFill.classList.add('captured');
                 }
-                if (statusText) statusText.textContent = '撮影完了';
+                if (statusText) statusText.textContent = '解析中...';
                 captureAndAnalyze();
                 stabilityCounter = 0;
 
@@ -375,7 +372,7 @@ function checkStabilityAndCapture() {
                             stabilityBarFill.style.width = '0%';
                             stabilityBarFill.classList.remove('captured');
                         }
-                        if (statusText) statusText.textContent = '静止を待っています...';
+                        if (statusText) statusText.textContent = 'スキャン中';
                     }
                 }, CAPTURE_RESET_DELAY_MS);
             }
@@ -386,10 +383,8 @@ function checkStabilityAndCapture() {
                 stabilityBarFill.style.width = '0%';
                 stabilityBarFill.classList.remove('captured');
             }
-            if (lastStabilityState !== 'moving') {
-                lastStabilityState = 'moving';
-                if (statusText) statusText.textContent = '動きを検出中...';
-            }
+            // テキストは変更しない（バーが0%に戻ることで動き検出を表現）
+            lastStabilityState = 'moving';
         }
     }
 
@@ -587,7 +582,7 @@ function scheduleRetry() {
         if (isPausedByError) {
             isScanning = true;
             isPausedByError = false;
-            if (statusText) statusText.textContent = '静止を待っています...';
+            if (statusText) statusText.textContent = 'スキャン中';
             requestAnimationFrame(scanLoop);
         }
     }, RETRY_DELAY_MS);
