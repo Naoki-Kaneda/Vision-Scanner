@@ -712,21 +712,29 @@ function init() {
         return;
     }
 
-    // ─── イベントリスナー登録（CSP準拠: HTML onclick 属性を排除） ──
-    btnCamera.addEventListener('click', () => switchSource('camera'));
-    btnSwitchCam.addEventListener('click', toggleCameraDevice);
-    btnFile.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', handleFileUpload);
+    // ─── イベントリスナー登録（全要素にnullガード付き） ──
+    if (btnCamera) btnCamera.addEventListener('click', () => switchSource('camera'));
+    if (btnSwitchCam) btnSwitchCam.addEventListener('click', toggleCameraDevice);
+    if (btnFile && fileInput) btnFile.addEventListener('click', () => fileInput.click());
+    if (fileInput) fileInput.addEventListener('change', handleFileUpload);
     if (btnMirror) btnMirror.addEventListener('click', toggleMirror);
-    modeText.addEventListener('click', () => setMode('text'));
-    modeObject.addEventListener('click', () => setMode('object'));
-    btnScan.addEventListener('click', toggleScanning);
+    if (modeText) modeText.addEventListener('click', () => setMode('text'));
+    if (modeObject) modeObject.addEventListener('click', () => setMode('object'));
+    if (btnScan) btnScan.addEventListener('click', toggleScanning);
     if (btnClear) btnClear.addEventListener('click', clearResults);
 
     setupCamera();
     updateMirrorState();
     loadApiUsage();
     loadProxyConfig();
+
+    console.log('[init] 完了:', {
+        btnScan: !!btnScan,
+        btnScanDisabled: btnScan?.disabled,
+        video: !!video,
+        camera: !!btnCamera,
+        file: !!btnFile,
+    });
 }
 
 document.addEventListener('DOMContentLoaded', init);
