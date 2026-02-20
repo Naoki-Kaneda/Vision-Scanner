@@ -17,6 +17,8 @@ const MIN_RESULT_LENGTH = 5;         // 結果フィルター: 最小文字数
 const LABEL_MAX_LENGTH = 25;         // バウンディングボックスのラベル最大文字数
 const RETRY_DELAY_MS = 5000;         // エラー後の再試行待機時間（ミリ秒）
 const CAPTURE_RESET_DELAY_MS = 1500; // 撮影完了後のバーリセット遅延（ミリ秒）
+// true にするとクライアント側でも日次上限を強制。既定は false（サーバー側429に委譲）
+const ENFORCE_CLIENT_DAILY_LIMIT = false;
 
 // ─── DOM要素の参照（init() で DOMContentLoaded 後に取得） ────
 let video, canvas, ctx, overlayCanvas, overlayCtx;
@@ -127,8 +129,8 @@ function updateApiCounter() {
         apiCounter.style.color = '';
     }
 
-    // 上限到達時はStartボタンを無効化、それ以外は復帰
-    if (apiCallCount >= API_DAILY_LIMIT) {
+    // 既定ではボタンロックを行わない（サーバー側のレート制限を信頼）
+    if (ENFORCE_CLIENT_DAILY_LIMIT && apiCallCount >= API_DAILY_LIMIT) {
         disableScanButton('API上限（本日分）');
     } else {
         btnScan.disabled = false;
@@ -139,7 +141,7 @@ function updateApiCounter() {
 
 /** API上限に達しているか判定する。達している場合はスキャンを停止。 */
 function isApiLimitReached() {
-    if (apiCallCount >= API_DAILY_LIMIT) {
+    if (ENFORCE_CLIENT_DAILY_LIMIT && apiCallCount >= API_DAILY_LIMIT) {
         statusText.textContent = '⚠ API上限に達しました（本日分）';
         stopScanning();
         disableScanButton('API上限（本日分）');
@@ -270,15 +272,15 @@ function startScanning() {
     }
 
     isScanning = true;
-    btnScan.innerHTML = '<span class="icon">■</span> Stop';
+    btnScan.innerHTML = '<span class="icon">■</span> ストップ';
     btnScan.classList.add('scanning');
-    videoContainer.classList.add('scanning');
-    statusDot.classList.add('active');
-    statusText.textContent = '静止を待っています...';
+    if (videoContainer) videoContainer.classList.add('scanning');
+    if (statusDot) statusDot.classList.add('active');
+    if (statusText) statusText.textContent = '静止を待っています...';
 
     // 安定化バーを表示
-    stabilityBarContainer.classList.remove('hidden');
-    stabilityBarFill.style.width = '0%';
+    if (stabilityBarContainer) stabilityBarContainer.classList.remove('hidden');
+    if (stabilityBarFill) stabilityBarFill.style.width = '0%';
 
     requestAnimationFrame(scanLoop);
 }
@@ -292,14 +294,14 @@ function stopScanning() {
         retryTimerId = null;
     }
     clearOverlay();
-    btnScan.innerHTML = '<span class="icon">▶</span> Start';
+    btnScan.innerHTML = '<span class="icon">▶</span> スタート';
     btnScan.classList.remove('scanning');
-    videoContainer.classList.remove('scanning');
-    statusDot.classList.remove('active');
-    statusText.textContent = '準備完了';
+    if (videoContainer) videoContainer.classList.remove('scanning');
+    if (statusDot) statusDot.classList.remove('active');
+    if (statusText) statusText.textContent = '準備完了';
 
     // 安定化バーを非表示
-    stabilityBarContainer.classList.add('hidden');
+    if (stabilityBarContainer) stabilityBarContainer.classList.add('hidden');
 }
 
 /** requestAnimationFrameベースのスキャンループ。 */
@@ -331,33 +333,41 @@ function checkStabilityAndCapture() {
             // 安定状態
             stabilityCounter++;
             const progress = Math.min((stabilityCounter / STABILITY_THRESHOLD) * 100, 100);
-            stabilityBarFill.style.width = progress + '%';
-            stabilityBarFill.classList.remove('captured');
-            statusText.textContent = `安定化中... ${Math.round(progress)}%`;
+            if (stabilityBarFill) {
+                stabilityBarFill.style.width = progress + '%';
+                stabilityBarFill.classList.remove('captured');
+            }
+            if (statusText) statusText.textContent = `安定化中... ${Math.round(progress)}%`;
 
             if (stabilityCounter >= STABILITY_THRESHOLD) {
                 // 安定完了 → キャプチャ実行
-                stabilityBarFill.style.width = '100%';
-                stabilityBarFill.classList.add('captured');
-                statusText.textContent = '📸 撮影完了！';
+                if (stabilityBarFill) {
+                    stabilityBarFill.style.width = '100%';
+                    stabilityBarFill.classList.add('captured');
+                }
+                if (statusText) statusText.textContent = '📸 撮影完了！';
                 captureAndAnalyze();
                 stabilityCounter = 0;
 
                 // 短い遅延後にバーをリセット
                 setTimeout(() => {
                     if (isScanning) {
-                        stabilityBarFill.style.width = '0%';
-                        stabilityBarFill.classList.remove('captured');
-                        statusText.textContent = '静止を待っています...';
+                        if (stabilityBarFill) {
+                            stabilityBarFill.style.width = '0%';
+                            stabilityBarFill.classList.remove('captured');
+                        }
+                        if (statusText) statusText.textContent = '静止を待っています...';
                     }
                 }, CAPTURE_RESET_DELAY_MS);
             }
         } else {
             // 動きを検出 → カウンターリセット
             stabilityCounter = 0;
-            stabilityBarFill.style.width = '0%';
-            stabilityBarFill.classList.remove('captured');
-            statusText.textContent = '動きを検出中...';
+            if (stabilityBarFill) {
+                stabilityBarFill.style.width = '0%';
+                stabilityBarFill.classList.remove('captured');
+            }
+            if (statusText) statusText.textContent = '動きを検出中...';
         }
     }
 
@@ -384,6 +394,7 @@ function clearOverlay() {
  */
 function drawBoundingBoxes(data, imageSize) {
     clearOverlay();
+    if (!videoContainer || !overlayCtx) return;
 
     const rect = videoContainer.getBoundingClientRect();
     overlayCanvas.width = rect.width;
@@ -556,7 +567,7 @@ function scheduleRetry() {
         if (isPausedByError) {
             isScanning = true;
             isPausedByError = false;
-            statusText.textContent = '静止を待っています...';
+            if (statusText) statusText.textContent = '静止を待っています...';
             requestAnimationFrame(scanLoop);
         }
     }, RETRY_DELAY_MS);
@@ -623,7 +634,7 @@ function clearResults() {
 
 /** ミラー（左右反転）の状態をDOMに反映する。 */
 function updateMirrorState() {
-    videoContainer.classList.toggle('mirrored', isMirrored);
+    if (videoContainer) videoContainer.classList.toggle('mirrored', isMirrored);
 }
 
 /** ミラー（左右反転）を切り替える。 */
@@ -667,8 +678,11 @@ function init() {
     modeText = document.getElementById('mode-text');
     modeObject = document.getElementById('mode-object');
     const fileInput = document.getElementById('file-input');
-    const btnMirror = document.getElementById('btn-mirror');
-    const btnClear = document.getElementById('btn-clear');
+    // 旧テンプレート互換: idが無い場合は既存クラスから取得
+    const btnMirror = document.getElementById('btn-mirror')
+        || document.querySelector('.video-tools .tool-btn');
+    const btnClear = document.getElementById('btn-clear')
+        || document.querySelector('.clear-btn');
 
     // 古いテンプレート/キャッシュ混在時のクラッシュ防止
     if (!canvas && videoContainer) {
@@ -692,8 +706,6 @@ function init() {
     if (!overlayCanvas) missing.push('overlay-canvas');
     if (!btnScan) missing.push('btn-scan');
     if (!fileInput) missing.push('file-input');
-    if (!btnMirror) missing.push('btn-mirror');
-    if (!btnClear) missing.push('btn-clear');
     if (!ctx || !overlayCtx) missing.push('canvas-context');
     if (missing.length) {
         console.error('UI initialization failed. Missing elements:', missing.join(', '));
@@ -705,11 +717,11 @@ function init() {
     btnSwitchCam.addEventListener('click', toggleCameraDevice);
     btnFile.addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', handleFileUpload);
-    btnMirror.addEventListener('click', toggleMirror);
+    if (btnMirror) btnMirror.addEventListener('click', toggleMirror);
     modeText.addEventListener('click', () => setMode('text'));
     modeObject.addEventListener('click', () => setMode('object'));
     btnScan.addEventListener('click', toggleScanning);
-    btnClear.addEventListener('click', clearResults);
+    if (btnClear) btnClear.addEventListener('click', clearResults);
 
     setupCamera();
     updateMirrorState();
