@@ -5,6 +5,7 @@ Vision AI Scanner - メインアプリケーション。
 
 import os
 import base64
+import hashlib
 import logging
 import secrets
 
@@ -12,7 +13,7 @@ from flask import Flask, render_template, request, jsonify, g
 from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
 from vision_api import detect_content, get_proxy_status, set_proxy_enabled, VALID_MODES
-from rate_limiter import try_consume_request, release_request
+from rate_limiter import try_consume_request, release_request, RATE_LIMIT_DAILY
 
 # ─── 設定 ──────────────────────────────────────
 load_dotenv()
@@ -54,6 +55,30 @@ app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
 # テンプレートをリクエストごとにディスクから再読み込み
 app.config["TEMPLATES_AUTO_RELOAD"] = True
+
+# 静的ファイルのハッシュキャッシュ（起動中はファイル変更時に自動更新）
+_static_hash_cache = {}
+
+
+def _static_file_hash(filename):
+    """静的ファイルのMD5ハッシュ先頭8文字を返す（キャッシュバスティング用）。"""
+    filepath = os.path.join(app.static_folder, filename)
+    try:
+        mtime = os.path.getmtime(filepath)
+        cache_key = f"{filename}:{mtime}"
+        if cache_key not in _static_hash_cache:
+            with open(filepath, "rb") as f:
+                _static_hash_cache[cache_key] = hashlib.md5(f.read()).hexdigest()[:8]
+        return _static_hash_cache[cache_key]
+    except OSError:
+        return "0"
+
+
+@app.context_processor
+def inject_static_hash():
+    """テンプレートに static_hash 関数を注入する。"""
+    return {"static_hash": _static_file_hash}
+
 
 # プロキシ配下でのIP取得を正しく行う（X-Forwarded-For対応）
 TRUST_PROXY = os.getenv("TRUST_PROXY", "false").lower() == "true"
@@ -168,11 +193,34 @@ def _validate_image_format(decoded_bytes):
     return False
 
 
+# ─── ヘルスチェック ──────────────────────────────
+@app.route("/healthz")
+def healthz():
+    """Liveness: アプリケーションが起動しているか（依存なし）"""
+    return jsonify({"status": "ok"})
+
+
+@app.route("/readyz")
+def readyz():
+    """Readiness: リクエスト処理可能か（APIキー等の設定チェック）"""
+    checks = {
+        "api_key_configured": bool(os.getenv("VISION_API_KEY")),
+    }
+    all_ok = all(checks.values())
+    return jsonify({"status": "ok" if all_ok else "not_ready", "checks": checks}), 200 if all_ok else 503
+
+
 # ─── ルーティング ────────────────────────────────
 @app.route("/")
 def index():
     """アプリケーションのメインページを表示する"""
     return render_template("index.html", csp_nonce=g.csp_nonce)
+
+
+@app.route("/api/config/limits", methods=["GET"])
+def get_rate_limits():
+    """レート制限設定値をフロントエンドに返す"""
+    return jsonify({"daily_limit": RATE_LIMIT_DAILY})
 
 
 @app.route("/api/config/proxy", methods=["GET"])

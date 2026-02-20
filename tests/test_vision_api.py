@@ -278,3 +278,53 @@ class TestImageSafetyCheck:
         result = detect_content(make_b64(), mode="text")
         assert result["ok"] is True
         mock_post.assert_called_once()
+
+
+# ─── get_proxy_status: 4パターン回帰テスト ──────────────
+class TestGetProxyStatus:
+    """NO_PROXY_MODE と PROXY_URL の組み合わせ4パターンで get_proxy_status を検証する。"""
+
+    @patch("vision_api.NO_PROXY_MODE", False)
+    @patch("vision_api._RAW_PROXY_URL", "http://proxy.example.com:8080")
+    def test_プロキシURL有りでNO_PROXY_MODE無効ならenabled(self):
+        """PROXY_URL設定済み + NO_PROXY_MODE=false → enabled=True。"""
+        from vision_api import get_proxy_status
+        status = get_proxy_status()
+        assert status["enabled"] is True
+        assert "proxy.example.com" in status["url"]
+
+    @patch("vision_api.NO_PROXY_MODE", True)
+    @patch("vision_api._RAW_PROXY_URL", "http://proxy.example.com:8080")
+    def test_プロキシURL有りでNO_PROXY_MODE有効ならdisabled(self):
+        """PROXY_URL設定済み + NO_PROXY_MODE=true → enabled=False。"""
+        from vision_api import get_proxy_status
+        status = get_proxy_status()
+        assert status["enabled"] is False
+        assert status["url"] == ""
+
+    @patch("vision_api.NO_PROXY_MODE", False)
+    @patch("vision_api._RAW_PROXY_URL", "")
+    def test_プロキシURL空でNO_PROXY_MODE無効ならdisabled(self):
+        """PROXY_URL未設定 + NO_PROXY_MODE=false → enabled=False。"""
+        from vision_api import get_proxy_status
+        status = get_proxy_status()
+        assert status["enabled"] is False
+
+    @patch("vision_api.NO_PROXY_MODE", True)
+    @patch("vision_api._RAW_PROXY_URL", "")
+    def test_プロキシURL空でNO_PROXY_MODE有効ならdisabled(self):
+        """PROXY_URL未設定 + NO_PROXY_MODE=true → enabled=False。"""
+        from vision_api import get_proxy_status
+        status = get_proxy_status()
+        assert status["enabled"] is False
+        assert status["url"] == ""
+
+    @patch("vision_api.NO_PROXY_MODE", False)
+    @patch("vision_api._RAW_PROXY_URL", "http://user:secret@proxy.example.com:8080")
+    def test_認証情報付きURLはマスクされる(self):
+        """認証情報付きのPROXY_URLが get_proxy_status で漏えいしないこと。"""
+        from vision_api import get_proxy_status
+        status = get_proxy_status()
+        assert status["enabled"] is True
+        assert "secret" not in status["url"]
+        assert "***:***" in status["url"]

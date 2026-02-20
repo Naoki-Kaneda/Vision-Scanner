@@ -7,6 +7,7 @@ import os
 import io
 import base64
 import logging
+from threading import Lock
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -36,6 +37,17 @@ def _get_active_proxy_config():
     if NO_PROXY_MODE or not _RAW_PROXY_URL:
         return {}
     return {"http": _RAW_PROXY_URL, "https": _RAW_PROXY_URL}
+
+
+def _mask_proxy_url(url):
+    """プロキシURLの認証情報をマスクする（例: http://user:pass@host → http://***:***@host）"""
+    if not url or "@" not in url:
+        return url
+    scheme_end = url.find("://")
+    if scheme_end == -1:
+        return "***"
+    at_pos = url.index("@")
+    return url[:scheme_end + 3] + "***:***" + url[at_pos:]
 
 
 VERIFY_SSL = os.getenv("VERIFY_SSL", "true").lower() != "false"
@@ -83,19 +95,11 @@ session.mount("https://", adapter)
 # 初期プロキシ設定適用
 session.proxies = _get_active_proxy_config()
 if session.proxies:
-    logger.info("プロキシ設定: %s", _RAW_PROXY_URL)
+    logger.info("プロキシ設定: %s", _mask_proxy_url(_RAW_PROXY_URL))
 
 
 # ─── プロキシ設定API ─────────────────────────────
-def _mask_proxy_url(url):
-    """プロキシURLの認証情報をマスクする（例: http://user:pass@host → http://***:***@host）"""
-    if not url or "@" not in url:
-        return url
-    scheme_end = url.find("://")
-    if scheme_end == -1:
-        return "***"
-    at_pos = url.index("@")
-    return url[:scheme_end + 3] + "***:***" + url[at_pos:]
+_proxy_lock = Lock()
 
 
 def get_proxy_status():
@@ -108,16 +112,16 @@ def get_proxy_status():
 
 def set_proxy_enabled(enabled: bool):
     """
-    プロキシの有効/無効を切り替える
+    プロキシの有効/無効を切り替える（スレッド安全）。
+    変更はロックで保護され、グローバル状態とセッション設定を原子的に更新する。
     Args:
         enabled (bool): Trueならプロキシ有効（PROXY_URLを使用）、Falseなら無効
     """
     global NO_PROXY_MODE
-    NO_PROXY_MODE = not enabled
-    
-    config = _get_active_proxy_config()
-    session.proxies = config
-    
+    with _proxy_lock:
+        NO_PROXY_MODE = not enabled
+        session.proxies = _get_active_proxy_config()
+
     status = "有効" if enabled else "無効"
     logger.info("プロキシ設定を変更しました: %s", status)
     return get_proxy_status()
@@ -214,7 +218,7 @@ def detect_content(image_b64, mode="text"):
         response = session.post(api_url, json=payload, timeout=API_TIMEOUT_SECONDS)
 
         if response.status_code != 200:
-            logger.error("APIエラー (ステータス %d): %s", response.status_code, response.text)
+            logger.error("APIエラー (ステータス %d): %.500s", response.status_code, response.text)
             return {
                 "ok": False,
                 "data": [],

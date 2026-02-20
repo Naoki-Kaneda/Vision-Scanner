@@ -3,6 +3,7 @@ Vision AI Scanner - APIエンドポイントのテスト。
 正常系（OCR/物体検出）、不正入力、API失敗時、セキュリティ、エラーハンドラの6系統をカバー。
 """
 
+import os
 import base64
 from unittest.mock import patch
 from conftest import create_valid_image_base64, create_valid_png_base64
@@ -487,3 +488,54 @@ class TestCors:
         """許可されていないOriginにはCORSヘッダーが付与されないこと。"""
         response = client.get("/", headers={"Origin": "https://evil.example.com"})
         assert "Access-Control-Allow-Origin" not in response.headers
+
+
+# ─── レート制限設定API テスト ───────────────────────────
+class TestRateLimitsConfig:
+    """レート制限設定エンドポイントのテスト。"""
+
+    def test_日次上限値が取得できる(self, client):
+        """GET /api/config/limits がサーバーの日次上限値を返すこと。"""
+        response = client.get("/api/config/limits")
+        assert response.status_code == 200
+        data = response.get_json()
+        assert "daily_limit" in data
+        assert isinstance(data["daily_limit"], int)
+        assert data["daily_limit"] > 0
+
+    @patch("app.RATE_LIMIT_DAILY", 50)
+    def test_環境変数で変更した上限値が反映される(self, client):
+        """RATE_LIMIT_DAILY を変更すると /api/config/limits にも反映されること。"""
+        response = client.get("/api/config/limits")
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["daily_limit"] == 50
+
+
+# ─── ヘルスチェック テスト ─────────────────────────────
+class TestHealthChecks:
+    """ヘルスチェックエンドポイントのテスト。"""
+
+    def test_healthzが200を返す(self, client):
+        """GET /healthz が常に200を返すこと。"""
+        response = client.get("/healthz")
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "ok"
+
+    def test_readyzがAPIキー設定済みで200を返す(self, client):
+        """VISION_API_KEYが設定されていれば /readyz は200を返すこと。"""
+        response = client.get("/readyz")
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "ok"
+        assert data["checks"]["api_key_configured"] is True
+
+    @patch.dict(os.environ, {"VISION_API_KEY": ""})
+    def test_readyzがAPIキー未設定で503を返す(self, client):
+        """VISION_API_KEYが空なら /readyz は503を返すこと。"""
+        response = client.get("/readyz")
+        assert response.status_code == 503
+        data = response.get_json()
+        assert data["status"] == "not_ready"
+        assert data["checks"]["api_key_configured"] is False

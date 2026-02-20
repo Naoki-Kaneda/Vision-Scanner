@@ -21,6 +21,14 @@ RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "20"))
 RATE_LIMIT_DAILY = int(os.getenv("RATE_LIMIT_DAILY", "100"))
 
 
+def _seconds_until_midnight():
+    """翌日0時までの残り秒数を返す（日付境界リセット用）。"""
+    import datetime
+    now = datetime.datetime.now()
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
+    return max(int((midnight - now).total_seconds()), 1)
+
+
 # ─── Redis バックエンド ────────────────────────────
 class RedisRateLimiter:
     """Redis原子操作によるレート制限（マルチプロセス安全）。"""
@@ -33,6 +41,7 @@ class RedisRateLimiter:
     local request_id = ARGV[2]
     local per_minute = tonumber(ARGV[3])
     local daily_limit = tonumber(ARGV[4])
+    local daily_ttl = tonumber(ARGV[5])
 
     redis.call('ZREMRANGEBYSCORE', minute_key, '-inf', now - 60)
 
@@ -50,7 +59,7 @@ class RedisRateLimiter:
     redis.call('EXPIRE', minute_key, 90)
     redis.call('INCR', daily_key)
     if redis.call('TTL', daily_key) < 0 then
-        redis.call('EXPIRE', daily_key, 86400)
+        redis.call('EXPIRE', daily_key, daily_ttl)
     end
 
     return {0, request_id}
@@ -86,6 +95,9 @@ class RedisRateLimiter:
         today = time.strftime("%Y-%m-%d")
         request_id = uuid.uuid4().hex[:12]
 
+        # 翌日0時までの残り秒数（日付境界でリセットするため）
+        seconds_until_midnight = _seconds_until_midnight()
+
         minute_key = f"rate:minute:{client_ip}"
         daily_key = f"rate:daily:{client_ip}:{today}"
 
@@ -93,6 +105,7 @@ class RedisRateLimiter:
             self._LUA_CONSUME, 2, minute_key, daily_key,
             str(now), request_id,
             str(RATE_LIMIT_PER_MINUTE), str(RATE_LIMIT_DAILY),
+            str(seconds_until_midnight),
         )
 
         if result[0] == 1:

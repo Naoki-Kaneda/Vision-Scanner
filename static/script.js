@@ -3,7 +3,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // ─── 定数・設定 ──────────────────────────────────
-const API_DAILY_LIMIT = 100;          // 1日のAPI呼び出し上限
+let API_DAILY_LIMIT = 100;            // 1日のAPI呼び出し上限（サーバーから動的取得）
 const API_WARNING_RATIO = 0.8;       // API上限の警告表示閾値（80%で黄色）
 const TARGET_BOX_RATIO = 0.6;        // ターゲットボックスの映像比率（60%）
 const STABILITY_THRESHOLD = 30;      // 安定判定フレーム数（約1秒@30fps）
@@ -99,11 +99,27 @@ function updateProxyButton(isEnabled) {
     if (!btnProxy) return;
 
     if (isEnabled) {
-        btnProxy.textContent = 'Proxy: ON';
+        btnProxy.textContent = 'Proxy設定: ON';
         btnProxy.className = 'proxy-badge active';
     } else {
-        btnProxy.textContent = 'Proxy: OFF';
+        btnProxy.textContent = 'Proxy設定: OFF';
         btnProxy.className = 'proxy-badge inactive';
+    }
+}
+
+/** サーバーからレート制限設定を取得し、フロントの上限表示に反映する。 */
+async function loadRateLimits() {
+    try {
+        const res = await fetch('/api/config/limits');
+        if (res.ok) {
+            const data = await res.json();
+            if (data.daily_limit > 0) {
+                API_DAILY_LIMIT = data.daily_limit;
+                updateApiCounter();
+            }
+        }
+    } catch (err) {
+        console.error('レート制限設定取得エラー:', err);
     }
 }
 
@@ -735,6 +751,7 @@ function init() {
     setupCamera();
     updateMirrorState();
     loadApiUsage();
+    loadRateLimits();
     loadProxyConfig();
 }
 
