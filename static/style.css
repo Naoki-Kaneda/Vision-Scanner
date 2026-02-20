@@ -154,6 +154,11 @@ video {
     object-fit: contain;
 }
 
+/* ─── ミラー反転 ──────────────────────────────── */
+.video-container.mirrored video {
+    transform: scaleX(-1);
+}
+
 /* ─── スキャンオーバーレイ（走査線アニメーション） ─ */
 .scan-overlay {
     position: absolute;
@@ -497,6 +502,7 @@ video {
 
 /* ─── Proxy Button Style ────────────────────── */
 .proxy-badge {
+    display: inline-block;
     background: #333;
     color: #fff;
     border: 1px solid #555;
@@ -506,6 +512,8 @@ video {
     cursor: pointer;
     font-family: inherit;
     transition: all 0.2s;
+    margin-right: 12px;
+    vertical-align: middle;
 }
 
 .proxy-badge:hover {

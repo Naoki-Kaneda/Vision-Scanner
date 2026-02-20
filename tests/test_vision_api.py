@@ -37,7 +37,6 @@ class TestDetectContentValidation:
     @patch.dict("os.environ", {"VISION_API_KEY": ""})
     def test_APIキー未設定はValueErrorを投げる(self):
         """VISION_API_KEY が未設定の場合は ValueError が発生すること。"""
-        import importlib
         import vision_api
         # APIキーをクリア
         original = vision_api.API_KEY

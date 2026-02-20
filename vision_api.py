@@ -22,6 +22,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+API_KEY = os.getenv("VISION_API_KEY")
 # URLはdetect_content内で構築する（起動時にキーがなくてもNoneStrが埋まる問題を回避）
 API_BASE_URL = "https://vision.googleapis.com/v1/images:annotate"
 
@@ -114,6 +115,15 @@ def preprocess_image(image_base64):
     """
     image_bytes = base64.b64decode(image_base64)
     img = Image.open(io.BytesIO(image_bytes))
+
+    # 画像展開爆弾対策: ピクセル数が大きすぎる場合は前処理をスキップ
+    max_pixels = 20_000_000  # 2000万ピクセル（約80MB RAM）
+    if img.width * img.height > max_pixels:
+        raise ValueError(f"画像サイズが大きすぎます: {img.width}x{img.height}")
+
+    # RGBA/CMYK等のモードをRGBに変換（JPEG保存に必要）
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
 
     # コントラストを少し強調
     img = ImageEnhance.Contrast(img).enhance(1.5)

@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+# プロジェクトルートをPythonパスに追加（from app import app を解決するため）
+pythonpath = ["."]
+testpaths = ["tests"]

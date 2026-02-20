@@ -8,7 +8,6 @@ import base64
 import logging
 import time
 from threading import Lock
-from collections import defaultdict
 
 # メモリリーク対策: cachetoolsを必須とする（requirements.txtに追加済み）
 try:
@@ -94,8 +93,26 @@ def record_request(client_ip):
 
 # ─── アプリケーション初期化 ─────────────────────
 app = Flask(__name__)
+
+# リクエストボディの最大サイズ（Base64画像の5MB + JSONオーバーヘッド）
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB
+
 # プロキシ配下でのIP取得を正しく行う（X-Forwarded-For対応）
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+# 注意: リバースプロキシなしの直接公開時は x_for=0 にすること（BUG-03対策）
+TRUST_PROXY = os.getenv("TRUST_PROXY", "false").lower() == "true"
+if TRUST_PROXY:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+
+# ─── セキュリティヘッダー ─────────────────────────
+@app.after_request
+def add_security_headers(response):
+    """全レスポンスにセキュリティヘッダーを付与する。"""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 
 # ─── ルーティング ────────────────────────────────
@@ -145,7 +162,14 @@ def analyze_endpoint():
             "message": "リクエストはJSON形式である必要があります",
         }), 400
 
-    data = request.json
+    # Content-Type は application/json だが本文が壊れている場合の安全なパース
+    data = request.get_json(silent=True)
+    if data is None:
+        return jsonify({
+            "ok": False, "data": [],
+            "error_code": "INVALID_FORMAT",
+            "message": "JSONのパースに失敗しました",
+        }), 400
 
     # JSON が dict 以外（null, 配列等）のとき AttributeError を防ぐ
     if not isinstance(data, dict):

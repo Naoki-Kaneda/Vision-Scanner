@@ -28,7 +28,7 @@ let currentMode = 'text';
 let isMirrored = false;
 let isPausedByError = false;  // エラーによる一時停止状態
 let retryTimerId = null;      // 再試行用タイマーID
-let lastFrameTime = 0;
+let isAnalyzing = false;      // API呼び出し中フラグ（並行呼び出し防止）
 let apiCallCount = 0;
 let videoDevices = [];
 let currentDeviceIndex = 0;
@@ -51,8 +51,14 @@ function loadApiUsage() {
     const today = new Date().toDateString();
     const saved = localStorage.getItem('visionApiUsage');
     if (saved) {
-        const data = JSON.parse(saved);
-        apiCallCount = (data.date === today) ? data.count : 0;
+        try {
+            const data = JSON.parse(saved);
+            apiCallCount = (data && data.date === today) ? (data.count || 0) : 0;
+        } catch {
+            // localStorageが壊れている場合はリセット
+            apiCallCount = 0;
+            localStorage.removeItem('visionApiUsage');
+        }
     }
     updateApiCounter();
 }
@@ -127,14 +133,21 @@ function updateApiCounter() {
         counterEl.style.color = '#ff3b3b';
     } else if (apiCallCount >= API_DAILY_LIMIT * 0.8) {
         counterEl.style.color = '#ffaa00';
+    } else {
+        // 日付リセット後に色を復帰
+        counterEl.style.color = '';
     }
 
-    // 上限到達時はStartボタンを無効化
+    // 上限到達時はStartボタンを無効化、それ以外は復帰
     if (apiCallCount >= API_DAILY_LIMIT) {
         btnScan.disabled = true;
         btnScan.innerHTML = '<span class="icon">⚠</span> API上限（本日分）';
         btnScan.style.opacity = '0.5';
         btnScan.style.cursor = 'not-allowed';
+    } else {
+        btnScan.disabled = false;
+        btnScan.style.opacity = '';
+        btnScan.style.cursor = '';
     }
 }
 
@@ -211,6 +224,10 @@ function handleFileUpload(event) {
         video.srcObject = null;
     }
 
+    // 前のBlob URLがあればリボークしてメモリリークを防止
+    if (video.src && video.src.startsWith('blob:')) {
+        URL.revokeObjectURL(video.src);
+    }
     video.src = URL.createObjectURL(file);
     video.loop = true;
     video.play();
@@ -346,7 +363,10 @@ function checkStabilityAndCapture() {
 /** ターゲットボックス内の映像をキャプチャしてAPIに送信する。 */
 async function captureAndAnalyze() {
     if (!video.videoWidth) return;
+    if (isAnalyzing) return;  // 前回のAPI呼び出し中は新しいキャプチャをスキップ
     if (isApiLimitReached()) return;
+
+    isAnalyzing = true;
 
     // ターゲットボックス内のみをクロップして送信
     const srcX = video.videoWidth * (1 - TARGET_BOX_RATIO) / 2;
@@ -369,9 +389,10 @@ async function captureAndAnalyze() {
 
         const result = await response.json();
 
-        // サーバー側レート制限
+        // サーバー側レート制限: 再試行スケジュールで連射を防止
         if (response.status === 429) {
             statusText.innerText = `⚠ ${result.message || 'リクエスト制限中'}`;
+            scheduleRetry();
             return;
         }
 
@@ -398,6 +419,8 @@ async function captureAndAnalyze() {
         statusText.innerText = '⚠ 通信エラー。再試行します...';
         console.error('通信エラー:', err);
         scheduleRetry();
+    } finally {
+        isAnalyzing = false;
     }
 }
 
@@ -465,7 +488,14 @@ function addResultItem(text) {
 
 /** 結果リストをクリアする。 */
 function clearResults() {
-    resultList.innerHTML = '<div class="placeholder-text">スキャンして検出を開始...</div>';
+    // XSS対策ポリシーの統一: innerHTML ではなく DOM API を使用
+    while (resultList.firstChild) {
+        resultList.removeChild(resultList.firstChild);
+    }
+    const placeholder = document.createElement('div');
+    placeholder.className = 'placeholder-text';
+    placeholder.textContent = 'スキャンして検出を開始...';
+    resultList.appendChild(placeholder);
 }
 
 

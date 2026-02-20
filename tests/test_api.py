@@ -11,7 +11,11 @@ from app import app
 
 @pytest.fixture
 def client():
-    """Flaskテストクライアントを作成する。"""
+    """Flaskテストクライアントを作成する。テスト間でレート制限ステートをリセット。"""
+    from app import rate_limit_store, daily_count_store
+    rate_limit_store.clear()
+    daily_count_store.clear()
+
     app.config["TESTING"] = True
     with app.test_client() as client:
         yield client
@@ -178,6 +182,18 @@ class TestInvalidInput:
         )
         assert response.status_code == 400
         assert response.get_json()["error_code"] == "INVALID_FORMAT"
+
+    def test_壊れたJSONでもJSON形式のエラーを返す(self, client):
+        """Content-Typeがapplication/jsonだが本文が不正JSONの場合、JSONエラーを返すこと。"""
+        response = client.post(
+            "/api/analyze",
+            data="{broken json",
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["ok"] is False
+        assert data["error_code"] == "INVALID_FORMAT"
 
 
 # ─── API失敗時テスト ──────────────────────────────
