@@ -260,6 +260,7 @@ function updateSourceButtons() {
 
 /** スキャンの開始/停止を切り替える。 */
 function toggleScanning() {
+    console.log('[toggleScanning] クリック検出, isScanning:', isScanning);
     isScanning ? stopScanning() : startScanning();
 }
 

@@ -394,6 +394,8 @@ video {
 .action-bar {
     margin-top: auto;
     padding-top: 10px;
+    position: relative;
+    z-index: 50;
 }
 
 /* ─── 結果パネル ────────────────────────────── */
