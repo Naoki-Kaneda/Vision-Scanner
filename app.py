@@ -46,6 +46,12 @@ app = Flask(__name__)
 # リクエストボディの最大サイズ（Base64画像の5MB + JSONオーバーヘッド）
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BODY
 
+# 静的ファイルのブラウザキャッシュを無効化（開発時のキャッシュ問題を防止）
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
+# テンプレートをリクエストごとにディスクから再読み込み
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+
 # プロキシ配下でのIP取得を正しく行う（X-Forwarded-For対応）
 TRUST_PROXY = os.getenv("TRUST_PROXY", "false").lower() == "true"
 if TRUST_PROXY:
@@ -84,6 +90,9 @@ def add_security_headers(response):
 
     # カメラ・マイクのアクセスを同一オリジンに限定
     response.headers["Permissions-Policy"] = "camera=(self), microphone=(self)"
+
+    # HTML/JS/CSSのブラウザキャッシュを防止（開発中の更新反映を保証）
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
 
     # 相関IDをレスポンスヘッダーに付与（障害調査用）
     if req_id:
