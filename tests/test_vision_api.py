@@ -3,25 +3,10 @@ vision_api.py の単体テスト。
 部分エラー・タイムアウト・接続失敗・モード不正・パーサー境界ケースをカバー。
 """
 
-import base64
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from requests.exceptions import Timeout, ConnectionError as RequestsConnectionError, RequestException
-
-
-# ─── テスト用ヘルパー ──────────────────────────────
-def _make_b64(data: bytes = b"\xff\xd8\xff\xd9") -> str:
-    """最小限のBase64文字列を生成する。"""
-    return base64.b64encode(data).decode()
-
-
-def _mock_response(status_code=200, json_data=None):
-    """requests.Responseのモックを作成する。"""
-    mock = MagicMock()
-    mock.status_code = status_code
-    mock.json.return_value = json_data or {}
-    mock.text = str(json_data)
-    return mock
+from conftest import make_b64, make_mock_response
 
 
 # ─── detect_content: モード不正値 ─────────────────
@@ -32,7 +17,7 @@ class TestDetectContentValidation:
         """mode が text/object 以外は ValueError が発生すること。"""
         from vision_api import detect_content
         with pytest.raises(ValueError, match="不正なモード"):
-            detect_content(_make_b64(), mode="invalid")
+            detect_content(make_b64(), mode="invalid")
 
     @patch.dict("os.environ", {"VISION_API_KEY": ""})
     def test_APIキー未設定はValueErrorを投げる(self):
@@ -44,7 +29,7 @@ class TestDetectContentValidation:
         try:
             with pytest.raises(ValueError, match="APIキーが未設定"):
                 from vision_api import detect_content
-                detect_content(_make_b64(), mode="text")
+                detect_content(make_b64(), mode="text")
         finally:
             vision_api.API_KEY = original
 
@@ -56,9 +41,9 @@ class TestDetectContentHttpErrors:
     @patch("vision_api.session.post")
     def test_HTTP500はokFalseを返す(self, mock_post):
         """Vision API が HTTP 500 を返した場合は ok=False を返すこと。"""
-        mock_post.return_value = _mock_response(status_code=500)
+        mock_post.return_value = make_mock_response(status_code=500)
         from vision_api import detect_content
-        result = detect_content(_make_b64(), mode="object")
+        result = detect_content(make_b64(), mode="object")
         assert result["ok"] is False
         assert result["error_code"] == "API_500"
 
@@ -67,7 +52,7 @@ class TestDetectContentHttpErrors:
         """タイムアウト発生時は ok=False, error_code=TIMEOUT を返すこと。"""
         mock_post.side_effect = Timeout()
         from vision_api import detect_content
-        result = detect_content(_make_b64(), mode="text")
+        result = detect_content(make_b64(), mode="text")
         assert result["ok"] is False
         assert result["error_code"] == "TIMEOUT"
 
@@ -76,7 +61,7 @@ class TestDetectContentHttpErrors:
         """接続失敗時は ok=False, error_code=CONNECTION_ERROR を返すこと。"""
         mock_post.side_effect = RequestsConnectionError()
         from vision_api import detect_content
-        result = detect_content(_make_b64(), mode="text")
+        result = detect_content(make_b64(), mode="text")
         assert result["ok"] is False
         assert result["error_code"] == "CONNECTION_ERROR"
 
@@ -85,7 +70,7 @@ class TestDetectContentHttpErrors:
         """RequestException 発生時は ok=False, error_code=REQUEST_ERROR を返すこと。"""
         mock_post.side_effect = RequestException("generic error")
         from vision_api import detect_content
-        result = detect_content(_make_b64(), mode="text")
+        result = detect_content(make_b64(), mode="text")
         assert result["ok"] is False
         assert result["error_code"] == "REQUEST_ERROR"
 
@@ -97,7 +82,7 @@ class TestDetectContentPartialError:
     @patch("vision_api.session.post")
     def test_部分エラーはokFalseを返す(self, mock_post):
         """HTTP 200 でも responses[0].error があれば ok=False を返すこと。"""
-        mock_post.return_value = _mock_response(status_code=200, json_data={
+        mock_post.return_value = make_mock_response(status_code=200, json_data={
             "responses": [{
                 "error": {
                     "code": 400,
@@ -106,7 +91,7 @@ class TestDetectContentPartialError:
             }]
         })
         from vision_api import detect_content
-        result = detect_content(_make_b64(), mode="text")
+        result = detect_content(make_b64(), mode="text")
         assert result["ok"] is False
         assert "VISION_400" in result["error_code"]
         assert "Bad image data" in result["message"]
@@ -114,34 +99,95 @@ class TestDetectContentPartialError:
 
 # ─── パーサー境界ケース ───────────────────────────
 class TestParsers:
-    """_parse_text_response / _parse_label_response の境界ケース。"""
+    """_parse_text_response / _parse_object_response の境界ケース。"""
 
-    def test_テキストレスポンスが空の場合空リストを返す(self):
-        """textAnnotations がない場合は空リストを返すこと。"""
+    def test_テキストレスポンスが空の場合空タプルを返す(self):
+        """textAnnotations がない場合は (空リスト, None) を返すこと。"""
         from vision_api import _parse_text_response
-        assert _parse_text_response({}) == []
-        assert _parse_text_response({"textAnnotations": []}) == []
+        data, img_size = _parse_text_response({})
+        assert data == []
+        assert img_size is None
 
-    def test_テキストレスポンスが空行を除外する(self):
-        """空行・空白行はフィルタリングされること。"""
+        data, img_size = _parse_text_response({"textAnnotations": []})
+        assert data == []
+        assert img_size is None
+
+    def test_テキストレスポンスが個別アノテーションをパースする(self):
+        """textAnnotations[1:] から各テキストのラベルと座標を返すこと。"""
         from vision_api import _parse_text_response
-        result = _parse_text_response({
-            "textAnnotations": [{"description": "Hello\n\n  \nWorld"}]
+        data, img_size = _parse_text_response({
+            "textAnnotations": [
+                {
+                    "description": "Hello World",
+                    "boundingPoly": {"vertices": [
+                        {"x": 0, "y": 0}, {"x": 100, "y": 0},
+                        {"x": 100, "y": 50}, {"x": 0, "y": 50},
+                    ]},
+                },
+                {
+                    "description": "Hello",
+                    "boundingPoly": {"vertices": [
+                        {"x": 0, "y": 0}, {"x": 50, "y": 0},
+                        {"x": 50, "y": 25}, {"x": 0, "y": 25},
+                    ]},
+                },
+                {
+                    "description": "World",
+                    "boundingPoly": {"vertices": [
+                        {"x": 55, "y": 0}, {"x": 100, "y": 0},
+                        {"x": 100, "y": 25}, {"x": 55, "y": 25},
+                    ]},
+                },
+            ]
         })
-        assert result == ["Hello", "World"]
+        assert len(data) == 2
+        assert data[0]["label"] == "Hello"
+        assert data[1]["label"] == "World"
+        assert len(data[0]["bounds"]) == 4
+        assert img_size == [100, 50]
 
-    def test_ラベルレスポンスが空の場合空リストを返す(self):
-        """labelAnnotations がない場合は空リストを返すこと。"""
-        from vision_api import _parse_label_response
-        assert _parse_label_response({}) == []
-        assert _parse_label_response({"labelAnnotations": []}) == []
+    def test_テキストレスポンスが空文字アノテーションを除外する(self):
+        """空文字・空白のdescriptionは除外されること。"""
+        from vision_api import _parse_text_response
+        data, _ = _parse_text_response({
+            "textAnnotations": [
+                {"description": "Full text", "boundingPoly": {"vertices": [
+                    {"x": 0, "y": 0}, {"x": 100, "y": 0},
+                    {"x": 100, "y": 50}, {"x": 0, "y": 50},
+                ]}},
+                {"description": "Hello", "boundingPoly": {"vertices": [
+                    {"x": 0, "y": 0}, {"x": 50, "y": 0},
+                    {"x": 50, "y": 25}, {"x": 0, "y": 25},
+                ]}},
+                {"description": "   ", "boundingPoly": {"vertices": [
+                    {"x": 55, "y": 0}, {"x": 60, "y": 0},
+                    {"x": 60, "y": 25}, {"x": 55, "y": 25},
+                ]}},
+            ]
+        })
+        assert len(data) == 1
+        assert data[0]["label"] == "Hello"
 
-    def test_ラベルに日本語訳がない場合英語のみ表示(self):
+    def test_物体レスポンスが空の場合空リストを返す(self):
+        """localizedObjectAnnotations がない場合は空リストを返すこと。"""
+        from vision_api import _parse_object_response
+        assert _parse_object_response({}) == []
+        assert _parse_object_response({"localizedObjectAnnotations": []}) == []
+
+    def test_物体ラベルに日本語訳がない場合英語のみ表示(self):
         """翻訳辞書にないラベルは英語のみで表示すること。"""
-        from vision_api import _parse_label_response
-        result = _parse_label_response({
-            "labelAnnotations": [{"description": "Quasar", "score": 0.99}]
+        from vision_api import _parse_object_response
+        result = _parse_object_response({
+            "localizedObjectAnnotations": [{
+                "name": "Quasar",
+                "score": 0.99,
+                "boundingPoly": {"normalizedVertices": [
+                    {"x": 0.1, "y": 0.1}, {"x": 0.5, "y": 0.1},
+                    {"x": 0.5, "y": 0.5}, {"x": 0.1, "y": 0.5},
+                ]},
+            }]
         })
         assert len(result) == 1
-        assert "Quasar" in result[0]
-        assert "（" not in result[0]  # 日本語括弧がないこと
+        assert "Quasar" in result[0]["label"]
+        assert "（" not in result[0]["label"]
+        assert len(result[0]["bounds"]) == 4

@@ -18,7 +18,7 @@ except ImportError:
 from flask import Flask, render_template, request, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
-from vision_api import detect_content, get_proxy_status, set_proxy_enabled
+from vision_api import detect_content, get_proxy_status, set_proxy_enabled, VALID_MODES
 
 # ─── 設定 ──────────────────────────────────────
 load_dotenv()
@@ -30,16 +30,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
-MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB（Base64デコード後）
-VALID_MODES = {"text", "object"}
+MAX_IMAGE_SIZE = 5 * 1024 * 1024          # 5MB（Base64デコード後）
+MAX_REQUEST_BODY = 10 * 1024 * 1024       # 10MB（Base64 + JSONオーバーヘッド）
 
 # ─── サーバー側レート制限（IP単位） ────────────────
-RATE_LIMIT_PER_MINUTE = 20  # 1分あたりの最大リクエスト数
-RATE_LIMIT_DAILY = 100      # 1日あたりの最大リクエスト数
+RATE_LIMIT_PER_MINUTE = 20   # 1分あたりの最大リクエスト数
+RATE_LIMIT_DAILY = 100       # 1日あたりの最大リクエスト数
+RATE_LIMIT_WINDOW_TTL = 90   # スライドウィンドウTTL（秒）。60秒+30秒バッファ
+RATE_LIMIT_DAILY_TTL = 86400 # 日次カウントTTL（秒）= 24時間
+CACHE_MAX_SIZE = 10_000      # レート制限キャッシュの最大IP数
 
-# TTL=86400秒（1日）、最大10000 IP
-rate_limit_store = TTLCache(maxsize=10000, ttl=90)   # 1分半のスライドウィンドウ用
-daily_count_store = TTLCache(maxsize=10000, ttl=86400)  # 1日TTL
+rate_limit_store = TTLCache(maxsize=CACHE_MAX_SIZE, ttl=RATE_LIMIT_WINDOW_TTL)
+daily_count_store = TTLCache(maxsize=CACHE_MAX_SIZE, ttl=RATE_LIMIT_DAILY_TTL)
 
 # スレッドセーフな操作のためのロック
 rate_limit_lock = Lock()
@@ -79,7 +81,7 @@ def record_request(client_ip):
     today = time.strftime("%Y-%m-%d")
 
     with rate_limit_lock:
-        # 分却ウィンドウへ追加
+        # スライドウィンドウへ追加
         timestamps = list(rate_limit_store.get(client_ip, []))
         rate_limit_store[client_ip] = [t for t in timestamps if now - t < 60] + [now]
 
@@ -95,7 +97,7 @@ def record_request(client_ip):
 app = Flask(__name__)
 
 # リクエストボディの最大サイズ（Base64画像の5MB + JSONオーバーヘッド）
-app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB
+app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BODY
 
 # プロキシ配下でのIP取得を正しく行う（X-Forwarded-For対応）
 # 注意: リバースプロキシなしの直接公開時は x_for=0 にすること（BUG-03対策）
@@ -113,6 +115,17 @@ def add_security_headers(response):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
+
+
+# ─── レスポンスヘルパー ────────────────────────────
+def _error_response(error_code, message, status_code=400):
+    """標準化されたエラーレスポンスを生成する。"""
+    return jsonify({
+        "ok": False,
+        "data": [],
+        "error_code": error_code,
+        "message": message,
+    }), status_code
 
 
 # ─── ルーティング ────────────────────────────────
@@ -139,6 +152,55 @@ def update_proxy_config():
     return jsonify({"ok": True, "status": new_status})
 
 
+def _validate_analyze_request():
+    """
+    /api/analyze のリクエストを検証し、画像データとモードを返す。
+
+    Returns:
+        tuple: (image_data, mode, None) 成功時
+               (None, None, error_response) 失敗時
+    """
+    # JSONフォーマットチェック
+    if not request.is_json:
+        return None, None, _error_response("INVALID_FORMAT", "リクエストはJSON形式である必要があります")
+
+    # Content-Type は application/json だが本文が壊れている場合の安全なパース
+    data = request.get_json(silent=True)
+    if data is None:
+        return None, None, _error_response("INVALID_FORMAT", "JSONのパースに失敗しました")
+
+    # JSON が dict 以外（null, 配列等）のとき AttributeError を防ぐ
+    if not isinstance(data, dict):
+        return None, None, _error_response("INVALID_FORMAT", "リクエストボディはJSONオブジェクトである必要があります")
+
+    # 画像データの存在チェック（Nullや空文字も拒否）
+    image_data = data.get("image")
+    if not image_data or not isinstance(image_data, str) or not image_data.strip():
+        return None, None, _error_response("MISSING_IMAGE", "画像データがありません")
+
+    # モードのバリデーション
+    mode = data.get("mode", "text")
+    if mode not in VALID_MODES:
+        return None, None, _error_response("INVALID_MODE", f"不正なモード: '{mode}'。許可値: {list(VALID_MODES)}")
+
+    # data:image/jpeg;base64, プレフィックスを除去
+    if "," in image_data:
+        image_data = image_data.split(",")[1]
+
+    # Base64デコード検証 & サイズチェック
+    try:
+        decoded = base64.b64decode(image_data, validate=True)
+        if len(decoded) > MAX_IMAGE_SIZE:
+            return None, None, _error_response(
+                "IMAGE_TOO_LARGE",
+                f"画像サイズが上限({MAX_IMAGE_SIZE // (1024*1024)}MB)を超えています",
+            )
+    except Exception:
+        return None, None, _error_response("INVALID_BASE64", "画像データのBase64デコードに失敗しました")
+
+    return image_data, mode, None
+
+
 @app.route("/api/analyze", methods=["POST"])
 def analyze_endpoint():
     """
@@ -154,80 +216,18 @@ def analyze_endpoint():
         error_code: エラーコード（エラー時のみ）
         message: エラーメッセージ（エラー時のみ）
     """
-    # JSONフォーマットチェック
-    if not request.is_json:
-        return jsonify({
-            "ok": False, "data": [],
-            "error_code": "INVALID_FORMAT",
-            "message": "リクエストはJSON形式である必要があります",
-        }), 400
+    # ─── リクエスト検証 ─────────────────
+    image_data, mode, validation_error = _validate_analyze_request()
+    if validation_error:
+        return validation_error
 
-    # Content-Type は application/json だが本文が壊れている場合の安全なパース
-    data = request.get_json(silent=True)
-    if data is None:
-        return jsonify({
-            "ok": False, "data": [],
-            "error_code": "INVALID_FORMAT",
-            "message": "JSONのパースに失敗しました",
-        }), 400
-
-    # JSON が dict 以外（null, 配列等）のとき AttributeError を防ぐ
-    if not isinstance(data, dict):
-        return jsonify({
-            "ok": False, "data": [],
-            "error_code": "INVALID_FORMAT",
-            "message": "リクエストボディはJSONオブジェクトである必要があります",
-        }), 400
-
-    # 画像データの存在チェック（Nullや空文字も拒否）
-    image_data = data.get("image")
-    if not image_data or not isinstance(image_data, str) or not image_data.strip():
-        return jsonify({
-            "ok": False, "data": [],
-            "error_code": "MISSING_IMAGE",
-            "message": "画像データがありません",
-        }), 400
-
-    # モードのバリデーション
-    mode = data.get("mode", "text")
-    if mode not in VALID_MODES:
-        return jsonify({
-            "ok": False, "data": [],
-            "error_code": "INVALID_MODE",
-            "message": f"不正なモード: '{mode}'。許可値: {list(VALID_MODES)}",
-        }), 400
-
-    # data:image/jpeg;base64, プレフィックスを除去
-    if "," in image_data:
-        image_data = image_data.split(",")[1]
-
-    # Base64デコード検証 & サイズチェック
-    try:
-        decoded = base64.b64decode(image_data, validate=True)
-        if len(decoded) > MAX_IMAGE_SIZE:
-            return jsonify({
-                "ok": False, "data": [],
-                "error_code": "IMAGE_TOO_LARGE",
-                "message": f"画像サイズが上限({MAX_IMAGE_SIZE // (1024*1024)}MB)を超えています",
-            }), 400
-    except Exception:
-        return jsonify({
-            "ok": False, "data": [],
-            "error_code": "INVALID_BASE64",
-            "message": "画像データのBase64デコードに失敗しました",
-        }), 400
-
-    # サーバー側レート制限チェック
+    # ─── レート制限チェック ──────────────
     client_ip = request.remote_addr or "unknown"
     limited, limit_message = is_rate_limited(client_ip)
     if limited:
-        return jsonify({
-            "ok": False, "data": [],
-            "error_code": "RATE_LIMITED",
-            "message": limit_message,
-        }), 429
+        return _error_response("RATE_LIMITED", limit_message, 429)
 
-    # Vision API呼び出し
+    # ─── Vision API呼び出し ─────────────
     try:
         result = detect_content(image_data, mode)
 
@@ -240,19 +240,11 @@ def analyze_endpoint():
 
     except ValueError as e:
         logger.warning("バリデーションエラー: %s", e)
-        return jsonify({
-            "ok": False, "data": [],
-            "error_code": "VALIDATION_ERROR",
-            "message": str(e),
-        }), 400
+        return _error_response("VALIDATION_ERROR", str(e))
 
     except Exception as e:
         logger.error("サーバーエラー: %s", e, exc_info=True)
-        return jsonify({
-            "ok": False, "data": [],
-            "error_code": "SERVER_ERROR",
-            "message": "内部サーバーエラーが発生しました",
-        }), 500
+        return _error_response("SERVER_ERROR", "内部サーバーエラーが発生しました", 500)
 
 
 if __name__ == "__main__":

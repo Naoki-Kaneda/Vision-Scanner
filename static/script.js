@@ -16,6 +16,8 @@ const MIN_RESULT_LENGTH = 5;         // 結果フィルター: 最小文字数
 const video = document.getElementById('video-feed');
 const canvas = document.getElementById('capture-canvas');
 const ctx = canvas.getContext('2d');
+const overlayCanvas = document.getElementById('overlay-canvas');
+const overlayCtx = overlayCanvas.getContext('2d');
 const resultList = document.getElementById('result-list');
 const btnScan = document.getElementById('btn-scan');
 const statusDot = document.getElementById('status-dot');
@@ -282,6 +284,7 @@ function stopScanning() {
         clearTimeout(retryTimerId);
         retryTimerId = null;
     }
+    clearOverlay();
     btnScan.innerHTML = '<span class="icon">▶</span> Start';
     btnScan.classList.remove('scanning');
     document.querySelector('.video-container').classList.remove('scanning');
@@ -357,6 +360,103 @@ function checkStabilityAndCapture() {
 
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// バウンディングボックス描画
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/** オーバーレイCanvasをクリアする。 */
+function clearOverlay() {
+    overlayCanvas.width = overlayCanvas.width;
+}
+
+/**
+ * 検出結果のバウンディングボックスをオーバーレイCanvasに描画する。
+ * テキストモード: 緑色の枠線（ラベル非表示）
+ * 物体モード: 赤色の枠線＋ラベル表示
+ *
+ * @param {Array} data - [{label, bounds}, ...] 検出結果
+ * @param {Array|null} imageSize - [width, height] テキストモードのピクセル基準サイズ
+ */
+function drawBoundingBoxes(data, imageSize) {
+    clearOverlay();
+
+    const container = document.querySelector('.video-container');
+    const rect = container.getBoundingClientRect();
+    overlayCanvas.width = rect.width;
+    overlayCanvas.height = rect.height;
+
+    // ターゲットボックスの表示領域（コンテナ基準）
+    const offsetRatio = (1 - TARGET_BOX_RATIO) / 2;
+    const targetX = rect.width * offsetRatio;
+    const targetY = rect.height * offsetRatio;
+    const targetW = rect.width * TARGET_BOX_RATIO;
+    const targetH = rect.height * TARGET_BOX_RATIO;
+
+    const isTextMode = currentMode === 'text';
+    const boxColor = isTextMode ? '#00ff88' : '#ff3b3b';
+    const bgColor = isTextMode ? 'rgba(0, 255, 136, 0.7)' : 'rgba(255, 59, 59, 0.7)';
+
+    overlayCtx.lineWidth = 2;
+    overlayCtx.font = '11px "Inter", "Noto Sans JP", sans-serif';
+
+    data.forEach(item => {
+        if (!item.bounds || item.bounds.length < 4) return;
+
+        // 正規化座標（0〜1）に変換
+        let normBounds;
+        if (isTextMode && imageSize && imageSize[0] > 0 && imageSize[1] > 0) {
+            // テキストモード: ピクセル座標 → 正規化座標
+            normBounds = item.bounds.map(([x, y]) => [
+                x / imageSize[0],
+                y / imageSize[1],
+            ]);
+        } else {
+            // 物体モード: 既に正規化座標（0〜1）
+            normBounds = item.bounds;
+        }
+
+        // ミラー反転時はX座標を反転
+        if (isMirrored) {
+            normBounds = normBounds.map(([nx, ny]) => [1 - nx, ny]);
+        }
+
+        // ターゲットボックス内のCanvas座標に変換
+        const pts = normBounds.map(([nx, ny]) => [
+            targetX + nx * targetW,
+            targetY + ny * targetH,
+        ]);
+
+        // 矩形を描画
+        overlayCtx.strokeStyle = boxColor;
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) {
+            overlayCtx.lineTo(pts[i][0], pts[i][1]);
+        }
+        overlayCtx.closePath();
+        overlayCtx.stroke();
+
+        // 物体モードのみラベルを表示（テキストモードは枠だけで十分）
+        if (!isTextMode) {
+            const labelText = item.label.length > 25
+                ? item.label.substring(0, 25) + '…'
+                : item.label;
+            const metrics = overlayCtx.measureText(labelText);
+            const labelX = pts[0][0];
+            const labelY = pts[0][1] - 4;
+
+            // ラベル背景
+            overlayCtx.fillStyle = bgColor;
+            overlayCtx.fillRect(labelX, labelY - 13, metrics.width + 6, 16);
+
+            // ラベルテキスト
+            overlayCtx.fillStyle = '#fff';
+            overlayCtx.fillText(labelText, labelX + 3, labelY);
+        }
+    });
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 画像キャプチャ・API解析
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -367,6 +467,7 @@ async function captureAndAnalyze() {
     if (isApiLimitReached()) return;
 
     isAnalyzing = true;
+    clearOverlay();
 
     // ターゲットボックス内のみをクロップして送信
     const srcX = video.videoWidth * (1 - TARGET_BOX_RATIO) / 2;
@@ -402,8 +503,9 @@ async function captureAndAnalyze() {
             saveApiUsage();
         }
 
-        // 統一レスポンス形式に対応
+        // 統一レスポンス形式に対応（data は {label, bounds} オブジェクト配列）
         if (result.ok && result.data && result.data.length > 0) {
+            drawBoundingBoxes(result.data, result.image_size);
             result.data
                 .filter(isValidResult)
                 .forEach(addResultItem);
@@ -453,16 +555,19 @@ function scheduleRetry() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /** ノイズや短すぎる結果を除外するフィルター。 */
-function isValidResult(text) {
+function isValidResult(item) {
+    const text = item.label || '';
     const cleaned = text.trim();
+    // 物体モードは信頼度スコア付きラベルなので最小文字数フィルターをスキップ
+    if (currentMode === 'object') return cleaned.length > 0;
     if (cleaned.length < MIN_RESULT_LENGTH) return false;
     if (cleaned.startsWith('www.') || cleaned.startsWith('http')) return false;
     return true;
 }
 
 /** 検出結果をタイムスタンプ付きで結果リストに追加する。 */
-function addResultItem(text) {
-    const cleanText = text.trim();
+function addResultItem(item) {
+    const cleanText = (item.label || '').trim();
     if (!cleanText) return;
 
     const timeStr = new Date().toLocaleTimeString();
@@ -521,6 +626,7 @@ function setMode(mode) {
     document.getElementById('mode-text').classList.toggle('active', mode === 'text');
     document.getElementById('mode-object').classList.toggle('active', mode === 'object');
     clearResults();
+    clearOverlay();
 }
 
 

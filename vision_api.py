@@ -43,6 +43,21 @@ VERIFY_SSL = os.getenv("VERIFY_SSL", "true").lower() != "false"
 # 許可されるモード値
 VALID_MODES = {"text", "object"}
 
+# ─── Vision API パラメータ ─────────────────────────
+FEATURE_TYPES = {
+    "text": "DOCUMENT_TEXT_DETECTION",   # TEXT_DETECTIONより高精度
+    "object": "OBJECT_LOCALIZATION",     # 座標付き物体検出（バウンディングボックス対応）
+}
+MAX_RESULTS = 10               # APIが返す最大結果数
+LANGUAGE_HINTS = ["en", "ja"]  # OCR言語ヒント（優先順）
+API_TIMEOUT_SECONDS = 15       # APIリクエストタイムアウト（秒）
+
+# ─── 画像前処理パラメータ ───────────────────────────
+MAX_IMAGE_PIXELS = 20_000_000  # 最大ピクセル数（約80MB RAM相当）
+CONTRAST_FACTOR = 1.5          # コントラスト強調係数
+SHARPNESS_FACTOR = 1.5         # シャープネス強調係数（文字の輪郭を明確に）
+JPEG_QUALITY = 95              # JPEG保存品質
+
 # SSL検証無効時のみ警告を抑制
 if not VERIFY_SSL:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -116,38 +131,41 @@ def preprocess_image(image_base64):
     image_bytes = base64.b64decode(image_base64)
     img = Image.open(io.BytesIO(image_bytes))
 
-    # 画像展開爆弾対策: ピクセル数が大きすぎる場合は前処理をスキップ
-    max_pixels = 20_000_000  # 2000万ピクセル（約80MB RAM）
-    if img.width * img.height > max_pixels:
+    # 画像展開爆弾対策: ピクセル数が大きすぎる場合は拒否
+    if img.width * img.height > MAX_IMAGE_PIXELS:
         raise ValueError(f"画像サイズが大きすぎます: {img.width}x{img.height}")
 
     # RGBA/CMYK等のモードをRGBに変換（JPEG保存に必要）
     if img.mode not in ("RGB", "L"):
         img = img.convert("RGB")
 
-    # コントラストを少し強調
-    img = ImageEnhance.Contrast(img).enhance(1.5)
-
-    # シャープネスを少し強調（文字の輪郭を明確に）
-    img = ImageEnhance.Sharpness(img).enhance(1.5)
+    # コントラスト・シャープネスを強調（OCR精度向上）
+    img = ImageEnhance.Contrast(img).enhance(CONTRAST_FACTOR)
+    img = ImageEnhance.Sharpness(img).enhance(SHARPNESS_FACTOR)
 
     # JPEG形式で高画質保存
     buffer = io.BytesIO()
-    img.save(buffer, format="JPEG", quality=95)
+    img.save(buffer, format="JPEG", quality=JPEG_QUALITY)
     return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 
 # ─── API呼び出し ──────────────────────────────────
-def detect_content(image_content_base64, mode="text"):
+def detect_content(image_b64, mode="text"):
     """
     Google Cloud Vision APIで画像解析を行う。
 
     Args:
-        image_content_base64: Base64エンコードされた画像文字列。
+        image_b64: Base64エンコードされた画像文字列。
         mode: 'text'（テキスト抽出）または 'object'（物体検出）。
 
     Returns:
-        dict: {"ok": bool, "data": list, "error_code": str|None, "message": str|None}
+        dict: {
+            "ok": bool,
+            "data": list[dict],  # [{"label": str, "bounds": [[x,y],...]}, ...]
+            "image_size": [w, h] | None,  # テキストモードのみ（ピクセル座標の基準）
+            "error_code": str|None,
+            "message": str|None,
+        }
 
     Raises:
         ValueError: modeが不正な場合、またはAPIキー未設定の場合。
@@ -155,18 +173,16 @@ def detect_content(image_content_base64, mode="text"):
     if not API_KEY:
         raise ValueError("APIキーが未設定です。.envファイルにVISION_API_KEYを設定してください。")
 
-    api_url = f"{API_BASE_URL}?key={API_KEY}"
-
     if mode not in VALID_MODES:
         raise ValueError(f"不正なモード: '{mode}'。許可値: {VALID_MODES}")
 
-    # DOCUMENT_TEXT_DETECTIONはTEXT_DETECTIONより高精度
-    feature_type = "DOCUMENT_TEXT_DETECTION" if mode == "text" else "LABEL_DETECTION"
+    api_url = f"{API_BASE_URL}?key={API_KEY}"
+    feature_type = FEATURE_TYPES[mode]
 
     # テキストモードの場合のみ前処理を適用
     if mode == "text":
         try:
-            image_content_base64 = preprocess_image(image_content_base64)
+            image_b64 = preprocess_image(image_b64)
         except Exception as e:
             logger.warning("前処理をスキップ: %s", e)
 
@@ -174,21 +190,22 @@ def detect_content(image_content_base64, mode="text"):
     payload = {
         "requests": [
             {
-                "image": {"content": image_content_base64},
-                "features": [{"type": feature_type, "maxResults": 10}],
-                "imageContext": {"languageHints": ["en", "ja"]},
+                "image": {"content": image_b64},
+                "features": [{"type": feature_type, "maxResults": MAX_RESULTS}],
+                "imageContext": {"languageHints": LANGUAGE_HINTS},
             }
         ]
     }
 
     try:
-        response = session.post(api_url, json=payload, timeout=15)
+        response = session.post(api_url, json=payload, timeout=API_TIMEOUT_SECONDS)
 
         if response.status_code != 200:
             logger.error("APIエラー (ステータス %d): %s", response.status_code, response.text)
             return {
                 "ok": False,
                 "data": [],
+                "image_size": None,
                 "error_code": f"API_{response.status_code}",
                 "message": f"Vision APIエラー (ステータス {response.status_code})",
             }
@@ -196,7 +213,7 @@ def detect_content(image_content_base64, mode="text"):
         result = response.json()
         responses = result.get("responses", [])
         if not responses:
-            return {"ok": True, "data": [], "error_code": None, "message": None}
+            return {"ok": True, "data": [], "image_size": None, "error_code": None, "message": None}
 
         # HTTP 200 でも responses[0] 内部にエラーが入る場合がある（Vision API の仕様）
         response_item = responses[0]
@@ -208,48 +225,91 @@ def detect_content(image_content_base64, mode="text"):
             return {
                 "ok": False,
                 "data": [],
+                "image_size": None,
                 "error_code": f"VISION_{code}",
                 "message": msg,
             }
 
         if mode == "text":
-            data = _parse_text_response(response_item)
+            data, image_size = _parse_text_response(response_item)
         else:
-            data = _parse_label_response(response_item)
+            data = _parse_object_response(response_item)
+            image_size = None  # 物体モードは正規化座標（0〜1）を使用
 
-        return {"ok": True, "data": data, "error_code": None, "message": None}
+        return {"ok": True, "data": data, "image_size": image_size, "error_code": None, "message": None}
 
     except requests.exceptions.Timeout:
         logger.error("Vision API タイムアウト")
-        return {"ok": False, "data": [], "error_code": "TIMEOUT", "message": "APIリクエストがタイムアウトしました"}
+        return {"ok": False, "data": [], "image_size": None, "error_code": "TIMEOUT", "message": "APIリクエストがタイムアウトしました"}
     except requests.exceptions.ConnectionError as e:
         logger.error("Vision API 接続エラー: %s", e)
-        return {"ok": False, "data": [], "error_code": "CONNECTION_ERROR", "message": "API接続に失敗しました"}
+        return {"ok": False, "data": [], "image_size": None, "error_code": "CONNECTION_ERROR", "message": "API接続に失敗しました"}
     except requests.exceptions.RequestException as e:
         logger.error("Vision API通信エラー: %s", e)
-        return {"ok": False, "data": [], "error_code": "REQUEST_ERROR", "message": str(e)}
+        return {"ok": False, "data": [], "image_size": None, "error_code": "REQUEST_ERROR", "message": str(e)}
 
 
 # ─── レスポンス解析（内部関数） ──────────────────────
 def _parse_text_response(response_data):
-    """テキスト検出レスポンスを解析して行ごとのリストを返す。"""
+    """
+    テキスト検出レスポンスを解析する。
+    各テキストブロックのラベルとバウンディングボックス座標を返す。
+
+    Returns:
+        tuple: (data_list, image_size)
+            data_list: [{"label": str, "bounds": [[x,y], ...]}, ...]
+            image_size: [width, height] ピクセル座標の基準サイズ
+    """
     text_annotations = response_data.get("textAnnotations", [])
     if not text_annotations:
-        return []
-    full_text = text_annotations[0].get("description", "")
-    return [line for line in full_text.split("\n") if line.strip()]
+        return [], None
 
+    # 画像サイズを最初のアノテーション（フルテキスト）の座標から推定
+    full_bounds = text_annotations[0].get("boundingPoly", {}).get("vertices", [])
+    if full_bounds:
+        max_x = max(v.get("x", 0) for v in full_bounds)
+        max_y = max(v.get("y", 0) for v in full_bounds)
+        image_size = [max_x, max_y]
+    else:
+        image_size = None
 
-def _parse_label_response(response_data):
-    """ラベル検出レスポンスを解析して日本語併記のリストを返す。"""
-    label_annotations = response_data.get("labelAnnotations", [])
+    # textAnnotations[1:] が個別の単語/ブロック（座標付き）
     results = []
-    for label in label_annotations:
-        en_name = label.get("description", "")
-        score = label.get("score", 0)
+    for annotation in text_annotations[1:]:
+        text = annotation.get("description", "").strip()
+        if not text:
+            continue
+        vertices = annotation.get("boundingPoly", {}).get("vertices", [])
+        bounds = [[v.get("x", 0), v.get("y", 0)] for v in vertices] if vertices else []
+        results.append({"label": text, "bounds": bounds})
+
+    return results, image_size
+
+
+def _parse_object_response(response_data):
+    """
+    物体検出（OBJECT_LOCALIZATION）レスポンスを解析する。
+    各物体のラベルと正規化バウンディングボックス座標（0〜1）を返す。
+
+    Returns:
+        list: [{"label": str, "bounds": [[x,y], ...]}, ...]
+    """
+    objects = response_data.get("localizedObjectAnnotations", [])
+    results = []
+    for obj in objects:
+        en_name = obj.get("name", "")
+        score = obj.get("score", 0)
         ja_name = OBJECT_TRANSLATIONS.get(en_name.lower(), "")
+
         if ja_name:
-            results.append(f"{en_name}（{ja_name}）- {score:.0%}")
+            label = f"{en_name}（{ja_name}）- {score:.0%}"
         else:
-            results.append(f"{en_name} - {score:.0%}")
+            label = f"{en_name} - {score:.0%}"
+
+        # normalizedVertices は 0〜1 の正規化座標
+        vertices = obj.get("boundingPoly", {}).get("normalizedVertices", [])
+        bounds = [[v.get("x", 0), v.get("y", 0)] for v in vertices] if vertices else []
+
+        results.append({"label": label, "bounds": bounds})
+
     return results
