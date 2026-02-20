@@ -5,7 +5,7 @@ Vision AI Scanner - APIエンドポイントのテスト。
 
 import base64
 from unittest.mock import patch
-from conftest import create_valid_image_base64
+from conftest import create_valid_image_base64, create_valid_png_base64
 
 
 # ─── 正常系テスト ──────────────────────────────────
@@ -111,8 +111,8 @@ class TestInvalidInput:
 
     def test_大きすぎる画像を拒否する(self, client):
         """5MBを超える画像は400を返すこと。"""
-        # 6MBのダミーデータ
-        large_image = base64.b64encode(b"\xff" * (6 * 1024 * 1024)).decode("utf-8")
+        # 6MBのダミーデータ（JPEG magic byte + パディング）
+        large_image = base64.b64encode(b"\xff\xd8\xff" + b"\x00" * (6 * 1024 * 1024)).decode("utf-8")
         response = client.post("/api/analyze", json={
             "image": large_image,
             "mode": "text",
@@ -160,6 +160,58 @@ class TestInvalidInput:
         data = response.get_json()
         assert data["ok"] is False
         assert data["error_code"] == "INVALID_FORMAT"
+
+
+# ─── 画像フォーマット検証テスト ────────────────────
+class TestImageFormatValidation:
+    """MIME magic byte によるフォーマット検証テスト。"""
+
+    def test_不正なフォーマットを拒否する(self, client):
+        """JPEG/PNG以外のバイナリは INVALID_IMAGE_FORMAT を返すこと。"""
+        # GIF magic byte（許可されていない）
+        gif_data = base64.b64encode(b"GIF89a" + b"\x00" * 100).decode("utf-8")
+        response = client.post("/api/analyze", json={
+            "image": gif_data,
+            "mode": "text",
+        })
+        assert response.status_code == 400
+        assert response.get_json()["error_code"] == "INVALID_IMAGE_FORMAT"
+
+    @patch("app.detect_content")
+    def test_JPEG画像を受け入れる(self, mock_detect, client):
+        """JPEG画像は正常に受け入れられること。"""
+        mock_detect.return_value = {
+            "ok": True, "data": [], "image_size": None,
+            "error_code": None, "message": None,
+        }
+        response = client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "text",
+        })
+        assert response.status_code == 200
+
+    @patch("app.detect_content")
+    def test_PNG画像を受け入れる(self, mock_detect, client):
+        """PNG画像は正常に受け入れられること。"""
+        mock_detect.return_value = {
+            "ok": True, "data": [], "image_size": None,
+            "error_code": None, "message": None,
+        }
+        response = client.post("/api/analyze", json={
+            "image": create_valid_png_base64(),
+            "mode": "text",
+        })
+        assert response.status_code == 200
+
+    def test_テキストデータを拒否する(self, client):
+        """プレーンテキストのBase64は INVALID_IMAGE_FORMAT を返すこと。"""
+        text_data = base64.b64encode(b"Hello, this is not an image").decode("utf-8")
+        response = client.post("/api/analyze", json={
+            "image": text_data,
+            "mode": "text",
+        })
+        assert response.status_code == 400
+        assert response.get_json()["error_code"] == "INVALID_IMAGE_FORMAT"
 
 
 # ─── API失敗時テスト ──────────────────────────────
@@ -262,7 +314,7 @@ class TestRateLimitAtomicity:
     @patch("app.detect_content")
     def test_API失敗時にレート制限カウントが戻る(self, mock_detect, client):
         """API失敗時は release_request により予約が取り消されること。"""
-        from app import daily_count_store
+        from rate_limiter import get_daily_count
 
         mock_detect.return_value = {
             "ok": False,
@@ -272,22 +324,18 @@ class TestRateLimitAtomicity:
             "message": "Vision APIエラー",
         }
 
-        # API失敗リクエストを送信
         response = client.post("/api/analyze", json={
             "image": create_valid_image_base64(),
             "mode": "text",
         })
         assert response.status_code == 502
 
-        # 日次カウントが0に戻っていること（予約→解放）
-        ip = "127.0.0.1"
-        daily = daily_count_store.get(ip, {"count": 0})
-        assert daily["count"] == 0
+        assert get_daily_count("127.0.0.1") == 0
 
     @patch("app.detect_content")
     def test_例外発生時もレート制限カウントが戻る(self, mock_detect, client):
         """detect_content例外時もカウントが戻ること。"""
-        from app import daily_count_store
+        from rate_limiter import get_daily_count
 
         mock_detect.side_effect = RuntimeError("テスト例外")
 
@@ -297,9 +345,7 @@ class TestRateLimitAtomicity:
         })
         assert response.status_code == 500
 
-        ip = "127.0.0.1"
-        daily = daily_count_store.get(ip, {"count": 0})
-        assert daily["count"] == 0
+        assert get_daily_count("127.0.0.1") == 0
 
 
 # ─── エラーハンドラテスト ──────────────────────
@@ -308,7 +354,6 @@ class TestErrorHandlers:
 
     def test_413エラーがJSONで返る(self, client):
         """MAX_CONTENT_LENGTH 超過時にJSON応答が返ること。"""
-        # 11MBの巨大ペイロードを送信（MAX_REQUEST_BODY=10MB）
         huge_payload = "x" * (11 * 1024 * 1024)
         response = client.post(
             "/api/analyze",
@@ -362,6 +407,7 @@ class TestProxyMalformedInput:
         assert data["error_code"] == "INVALID_FORMAT"
 
 
+# ─── セキュリティヘッダテスト ───────────────────
 class TestSecurityHeaders:
     """セキュリティヘッダのテスト。"""
 
@@ -372,7 +418,72 @@ class TestSecurityHeaders:
         csp = response.headers["Content-Security-Policy"]
         assert "default-src 'self'" in csp
 
+    def test_CSPにunsafe_inlineが含まれない(self, client):
+        """CSPヘッダに 'unsafe-inline' が含まれないこと（nonce化済み）。"""
+        response = client.get("/")
+        csp = response.headers["Content-Security-Policy"]
+        assert "'unsafe-inline'" not in csp
+
+    def test_CSPにノンスが含まれる(self, client):
+        """CSPのstyle-srcにnonce値が含まれること。"""
+        response = client.get("/")
+        csp = response.headers["Content-Security-Policy"]
+        assert "nonce-" in csp
+
     def test_レガシーXSSヘッダが存在しない(self, client):
         """X-XSS-Protection ヘッダが含まれないこと。"""
         response = client.get("/")
         assert "X-XSS-Protection" not in response.headers
+
+
+# ─── Request-ID テスト ──────────────────────────
+class TestRequestId:
+    """リクエスト相関IDのテスト。"""
+
+    def test_レスポンスにX_Request_Idヘッダーが含まれる(self, client):
+        """全レスポンスに X-Request-Id が付与されること。"""
+        response = client.get("/")
+        assert "X-Request-Id" in response.headers
+        req_id = response.headers["X-Request-Id"]
+        assert len(req_id) == 16  # token_hex(8) = 16文字
+
+    def test_リクエストごとに異なるIDが生成される(self, client):
+        """連続リクエストで異なるIDが割り当てられること。"""
+        response1 = client.get("/")
+        response2 = client.get("/")
+        assert response1.headers["X-Request-Id"] != response2.headers["X-Request-Id"]
+
+    @patch("app.detect_content")
+    def test_APIレスポンスにもX_Request_Idが含まれる(self, mock_detect, client):
+        """APIエンドポイントのレスポンスにもIDが含まれること。"""
+        mock_detect.return_value = {
+            "ok": True, "data": [], "image_size": None,
+            "error_code": None, "message": None,
+        }
+        response = client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "text",
+        })
+        assert "X-Request-Id" in response.headers
+
+
+# ─── CORS テスト ─────────────────────────────────
+class TestCors:
+    """CORSヘッダーのテスト。"""
+
+    def test_デフォルトではCORSヘッダーが付かない(self, client):
+        """ALLOWED_ORIGINS 未設定時は Access-Control-Allow-Origin が付かないこと。"""
+        response = client.get("/", headers={"Origin": "https://evil.example.com"})
+        assert "Access-Control-Allow-Origin" not in response.headers
+
+    @patch("app.ALLOWED_ORIGINS", ["https://trusted.example.com"])
+    def test_許可されたOriginにCORSヘッダーが付く(self, client):
+        """許可されたOriginにはCORSヘッダーが付与されること。"""
+        response = client.get("/", headers={"Origin": "https://trusted.example.com"})
+        assert response.headers.get("Access-Control-Allow-Origin") == "https://trusted.example.com"
+
+    @patch("app.ALLOWED_ORIGINS", ["https://trusted.example.com"])
+    def test_許可されていないOriginにはCORSヘッダーが付かない(self, client):
+        """許可されていないOriginにはCORSヘッダーが付与されないこと。"""
+        response = client.get("/", headers={"Origin": "https://evil.example.com"})
+        assert "Access-Control-Allow-Origin" not in response.headers

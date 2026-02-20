@@ -6,20 +6,13 @@ Vision AI Scanner - メインアプリケーション。
 import os
 import base64
 import logging
-import time
-import uuid
-from threading import Lock
+import secrets
 
-# メモリリーク対策: cachetoolsを必須とする（requirements.txtに追加済み）
-try:
-    from cachetools import TTLCache
-except ImportError:
-    raise ImportError("cachetools がインストールされていません。pip install -r requirements.txt を実行してください。")
-
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, g
 from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
 from vision_api import detect_content, get_proxy_status, set_proxy_enabled, VALID_MODES
+from rate_limiter import try_consume_request, release_request
 
 # ─── 設定 ──────────────────────────────────────
 load_dotenv()
@@ -35,84 +28,16 @@ MAX_IMAGE_SIZE = 5 * 1024 * 1024          # 5MB（Base64デコード後）
 MAX_REQUEST_BODY = 10 * 1024 * 1024       # 10MB（Base64 + JSONオーバーヘッド）
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")  # 管理API認証用シークレット
 
-# ─── サーバー側レート制限（IP単位） ────────────────
-RATE_LIMIT_PER_MINUTE = 20   # 1分あたりの最大リクエスト数
-RATE_LIMIT_DAILY = 100       # 1日あたりの最大リクエスト数
-RATE_LIMIT_WINDOW_TTL = 90   # スライドウィンドウTTL（秒）。60秒+30秒バッファ
-RATE_LIMIT_DAILY_TTL = 86400 # 日次カウントTTL（秒）= 24時間
-CACHE_MAX_SIZE = 10_000      # レート制限キャッシュの最大IP数
+# CORS: 許可するOrigin（カンマ区切り）。未設定 = 同一オリジンのみ（デフォルト安全）
+ALLOWED_ORIGINS = [
+    o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()
+]
 
-rate_limit_store = TTLCache(maxsize=CACHE_MAX_SIZE, ttl=RATE_LIMIT_WINDOW_TTL)
-daily_count_store = TTLCache(maxsize=CACHE_MAX_SIZE, ttl=RATE_LIMIT_DAILY_TTL)
-
-# スレッドセーフな操作のためのロック
-rate_limit_lock = Lock()
-
-
-def try_consume_request(client_ip):
-    """
-    レート制限のチェックと予約を原子的に行う（TOCTOU競合防止）。
-
-    制限内ならカウントを加算して (False, "", request_id) を返す。
-    制限超過なら加算せず (True, エラーメッセージ, None) を返す。
-    API呼び出し失敗時は release_request(client_ip, request_id) で予約を取り消すこと。
-
-    Returns:
-        tuple: (制限中か, エラーメッセージ, request_id|None)
-    """
-    now = time.time()
-    today = time.strftime("%Y-%m-%d")
-
-    with rate_limit_lock:
-        # 日次制限チェック
-        daily = daily_count_store.get(client_ip, {"date": "", "count": 0})
-        if daily.get("date") != today:
-            daily = {"date": today, "count": 0}
-
-        if daily["count"] >= RATE_LIMIT_DAILY:
-            return True, f"1日あたりのAPI上限({RATE_LIMIT_DAILY}回)に達しました", None
-
-        # 分間制限チェック（エントリは (timestamp, request_id) のタプル）
-        entries = list(rate_limit_store.get(client_ip, []))
-        recent = [e for e in entries if now - e[0] < 60]
-        if len(recent) >= RATE_LIMIT_PER_MINUTE:
-            return True, f"リクエスト頻度が高すぎます（上限: {RATE_LIMIT_PER_MINUTE}回/分）", None
-
-        # チェック通過 → 一意IDで予約を原子的に記録
-        request_id = uuid.uuid4().hex[:12]
-        rate_limit_store[client_ip] = recent + [(now, request_id)]
-        daily["count"] += 1
-        daily_count_store[client_ip] = daily
-
-    return False, "", request_id
-
-
-def release_request(client_ip, request_id):
-    """
-    API呼び出し失敗時に指定IDの予約のみを取り消す（並行リクエスト安全）。
-    """
-    now = time.time()
-    today = time.strftime("%Y-%m-%d")
-
-    with rate_limit_lock:
-        # 指定IDのエントリのみを除去（他のリクエストに影響しない）
-        entries = list(rate_limit_store.get(client_ip, []))
-        new_entries = []
-        removed = False
-        for e in entries:
-            if not removed and e[1] == request_id:
-                removed = True
-                continue
-            if now - e[0] < 60:
-                new_entries.append(e)
-        rate_limit_store[client_ip] = new_entries
-
-        # 除去できた場合のみ日次カウントを減算
-        if removed:
-            daily = daily_count_store.get(client_ip, {"date": "", "count": 0})
-            if daily.get("date") == today and daily["count"] > 0:
-                daily["count"] -= 1
-                daily_count_store[client_ip] = daily
+# 画像フォーマット検証: 許可するMIMEタイプのマジックバイト
+ALLOWED_IMAGE_MAGIC = {
+    b"\xff\xd8\xff": "image/jpeg",
+    b"\x89PNG\r\n\x1a\n": "image/png",
+}
 
 
 # ─── アプリケーション初期化 ─────────────────────
@@ -122,29 +47,53 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BODY
 
 # プロキシ配下でのIP取得を正しく行う（X-Forwarded-For対応）
-# 注意: リバースプロキシなしの直接公開時は x_for=0 にすること（BUG-03対策）
 TRUST_PROXY = os.getenv("TRUST_PROXY", "false").lower() == "true"
 if TRUST_PROXY:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+
+# ─── リクエストコンテキスト（request-id / CSPノンス） ──
+@app.before_request
+def set_request_context():
+    """リクエストごとに一意のIDとCSPノンスを生成する。"""
+    g.request_id = secrets.token_hex(8)
+    g.csp_nonce = secrets.token_urlsafe(16)
 
 
 # ─── セキュリティヘッダー ─────────────────────────
 @app.after_request
 def add_security_headers(response):
     """全レスポンスにセキュリティヘッダーを付与する。"""
+    nonce = getattr(g, "csp_nonce", "")
+    req_id = getattr(g, "request_id", "")
+
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    # CSP: self + Google Fonts + unsafe-inline（インラインstyle/onclick用）
+
+    # CSP: nonce化により unsafe-inline を完全排除
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "script-src 'self'; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        f"style-src 'self' 'nonce-{nonce}' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' blob: data:; "
         "media-src 'self' blob:; "
         "connect-src 'self'"
     )
+
+    # 相関IDをレスポンスヘッダーに付与（障害調査用）
+    if req_id:
+        response.headers["X-Request-Id"] = req_id
+
+    # CORS: 明示的に許可されたOriginのみ
+    if ALLOWED_ORIGINS:
+        origin = request.headers.get("Origin", "")
+        if origin in ALLOWED_ORIGINS:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+
     return response
 
 
@@ -182,11 +131,33 @@ def _error_response(error_code, message, status_code=400):
     }), status_code
 
 
+def _log(level, event, **kwargs):
+    """構造化ログ出力（request-id自動付与）。"""
+    req_id = getattr(g, "request_id", "-")
+    parts = [f"event={event}", f"request_id={req_id}"]
+    parts.extend(f"{k}={v}" for k, v in kwargs.items())
+    getattr(logger, level)(" ".join(parts))
+
+
+# ─── 画像フォーマット検証 ──────────────────────────
+def _validate_image_format(decoded_bytes):
+    """
+    デコード済みバイト列のマジックバイトを検査し、許可されたフォーマットか判定する。
+
+    Returns:
+        bool: JPEG/PNG なら True、それ以外は False
+    """
+    for magic_bytes in ALLOWED_IMAGE_MAGIC:
+        if decoded_bytes[:len(magic_bytes)] == magic_bytes:
+            return True
+    return False
+
+
 # ─── ルーティング ────────────────────────────────
 @app.route("/")
 def index():
     """アプリケーションのメインページを表示する"""
-    return render_template("index.html")
+    return render_template("index.html", csp_nonce=g.csp_nonce)
 
 
 @app.route("/api/config/proxy", methods=["GET"])
@@ -195,7 +166,6 @@ def get_proxy_config():
     status = get_proxy_status()
     auth_header = request.headers.get("X-Admin-Secret", "")
     if not ADMIN_SECRET or auth_header != ADMIN_SECRET:
-        # 未認証: ON/OFF状態のみ（URL情報は非公開）
         return jsonify({"enabled": status["enabled"]})
     return jsonify(status)
 
@@ -203,7 +173,6 @@ def get_proxy_config():
 @app.route("/api/config/proxy", methods=["POST"])
 def update_proxy_config():
     """プロキシ設定を更新する（認証必須）"""
-    # シークレットキーによる認証
     auth_header = request.headers.get("X-Admin-Secret", "")
     if not ADMIN_SECRET or auth_header != ADMIN_SECRET:
         return _error_response("UNAUTHORIZED", "管理APIへのアクセス権がありません", 403)
@@ -212,7 +181,6 @@ def update_proxy_config():
     if not isinstance(data, dict) or "enabled" not in data:
         return _error_response("INVALID_FORMAT", "enabledフィールドを含むJSONオブジェクトが必要です")
 
-    # 型の厳密チェック: bool("false") == True を防止
     if not isinstance(data["enabled"], bool):
         return _error_response("INVALID_TYPE", "enabledフィールドはboolean型(true/false)である必要があります")
 
@@ -228,25 +196,20 @@ def _validate_analyze_request():
         tuple: (image_data, mode, None) 成功時
                (None, None, error_response) 失敗時
     """
-    # JSONフォーマットチェック
     if not request.is_json:
         return None, None, _error_response("INVALID_FORMAT", "リクエストはJSON形式である必要があります")
 
-    # Content-Type は application/json だが本文が壊れている場合の安全なパース
     data = request.get_json(silent=True)
     if data is None:
         return None, None, _error_response("INVALID_FORMAT", "JSONのパースに失敗しました")
 
-    # JSON が dict 以外（null, 配列等）のとき AttributeError を防ぐ
     if not isinstance(data, dict):
         return None, None, _error_response("INVALID_FORMAT", "リクエストボディはJSONオブジェクトである必要があります")
 
-    # 画像データの存在チェック（Nullや空文字も拒否）
     image_data = data.get("image")
     if not image_data or not isinstance(image_data, str) or not image_data.strip():
         return None, None, _error_response("MISSING_IMAGE", "画像データがありません")
 
-    # モードのバリデーション
     mode = data.get("mode", "text")
     if mode not in VALID_MODES:
         return None, None, _error_response("INVALID_MODE", f"不正なモード: '{mode}'。許可値: {list(VALID_MODES)}")
@@ -255,13 +218,19 @@ def _validate_analyze_request():
     if "," in image_data:
         image_data = image_data.split(",")[1]
 
-    # Base64デコード検証 & サイズチェック
+    # Base64デコード検証 & サイズチェック & フォーマット検証
     try:
         decoded = base64.b64decode(image_data, validate=True)
         if len(decoded) > MAX_IMAGE_SIZE:
             return None, None, _error_response(
                 "IMAGE_TOO_LARGE",
                 f"画像サイズが上限({MAX_IMAGE_SIZE // (1024*1024)}MB)を超えています",
+            )
+        # MIME magic byte 検証（JPEG/PNGのみ許可）
+        if not _validate_image_format(decoded):
+            return None, None, _error_response(
+                "INVALID_IMAGE_FORMAT",
+                "許可されていない画像形式です（JPEG/PNGのみ対応）",
             )
     except Exception:
         return None, None, _error_response("INVALID_BASE64", "画像データのBase64デコードに失敗しました")
@@ -293,31 +262,30 @@ def analyze_endpoint():
     client_ip = request.remote_addr or "unknown"
     limited, limit_message, request_id = try_consume_request(client_ip)
     if limited:
-        logger.info("rate_limited ip=%s reason=%s", client_ip, limit_message)
+        _log("info", "rate_limited", ip=client_ip, reason=limit_message)
         return _error_response("RATE_LIMITED", limit_message, 429)
 
     # ─── Vision API呼び出し ─────────────
     try:
         result = detect_content(image_data, mode)
 
-        # API失敗時は該当IDの予約のみ取り消す（成功時のみカウント消費）
         if result["ok"]:
-            logger.info("api_success ip=%s mode=%s items=%d", client_ip, mode, len(result["data"]))
+            _log("info", "api_success", ip=client_ip, mode=mode, items=len(result["data"]))
         else:
             release_request(client_ip, request_id)
-            logger.warning("api_failure ip=%s mode=%s error_code=%s", client_ip, mode, result["error_code"])
+            _log("warning", "api_failure", ip=client_ip, mode=mode, error_code=result["error_code"])
 
         status_code = 200 if result["ok"] else 502
         return jsonify(result), status_code
 
     except ValueError as e:
         release_request(client_ip, request_id)
-        logger.warning("validation_error ip=%s error=%s", client_ip, e)
+        _log("warning", "validation_error", ip=client_ip, error=str(e))
         return _error_response("VALIDATION_ERROR", str(e))
 
     except Exception as e:
         release_request(client_ip, request_id)
-        logger.error("server_error ip=%s error=%s", client_ip, e, exc_info=True)
+        _log("error", "server_error", ip=client_ip, error=str(e))
         return _error_response("SERVER_ERROR", "内部サーバーエラーが発生しました", 500)
 
 

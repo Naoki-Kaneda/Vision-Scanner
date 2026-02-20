@@ -31,13 +31,10 @@
             <div class="panel video-panel">
                 <div class="panel-header">
                     <div class="controls">
-                        <button id="btn-camera" class="control-btn active" onclick="switchSource('camera')">カメラ</button>
-                        <button id="btn-switch-cam" class="control-btn" onclick="toggleCameraDevice()"
-                            style="display: none;">切替</button>
-                        <button id="btn-file" class="control-btn"
-                            onclick="document.getElementById('file-input').click()">ファイル</button>
-                        <input type="file" id="file-input" accept="video/*" style="display: none;"
-                            onchange="handleFileUpload(event)">
+                        <button id="btn-camera" class="control-btn active">カメラ</button>
+                        <button id="btn-switch-cam" class="control-btn hidden">切替</button>
+                        <button id="btn-file" class="control-btn">ファイル</button>
+                        <input type="file" id="file-input" accept="video/*" class="hidden">
                     </div>
                 </div>
 
@@ -46,36 +43,36 @@
                     <canvas id="overlay-canvas"></canvas>
                     <div class="scan-overlay"></div>
                     <div class="target-box"></div>
-                    <div id="stability-bar-container" class="stability-bar-container" style="display: none;">
+                    <div id="stability-bar-container" class="stability-bar-container hidden">
                         <div class="stability-help">📷 約1秒間カメラを静止させてください</div>
                         <div class="stability-bar-track">
                             <div id="stability-bar-fill" class="stability-bar-fill"></div>
                         </div>
                     </div>
                     <div class="video-tools">
-                        <button class="tool-btn" onclick="toggleMirror()" title="左右反転">↔ 反転</button>
+                        <button id="btn-mirror" class="tool-btn" title="左右反転">↔ 反転</button>
                         <div class="mode-switch">
-                            <button class="mode-btn active" onclick="setMode('text')" id="mode-text">テキスト</button>
-                            <button class="mode-btn" onclick="setMode('object')" id="mode-object">物体</button>
+                            <button class="mode-btn active" id="mode-text">テキスト</button>
+                            <button class="mode-btn" id="mode-object">物体</button>
                         </div>
                     </div>
                 </div>
 
                 <div class="action-bar">
-                    <button id="btn-scan" class="primary-btn" onclick="toggleScanning()">
+                    <button id="btn-scan" class="primary-btn">
                         <span class="icon">▶</span> スタート
                     </button>
                 </div>
 
                 <!-- キャプチャ用非表示キャンバス -->
-                <canvas id="capture-canvas" style="display: none;"></canvas>
+                <canvas id="capture-canvas" class="hidden"></canvas>
             </div>
 
             <!-- 右パネル: 検出結果 -->
             <div class="panel result-panel">
                 <div class="panel-header">
                     <h2>検出結果</h2>
-                    <button class="clear-btn" onclick="clearResults()">クリア</button>
+                    <button id="btn-clear" class="clear-btn">クリア</button>
                 </div>
                 <div id="result-list" class="result-list">
                     <div class="placeholder-text">スキャンして検出を開始...</div>

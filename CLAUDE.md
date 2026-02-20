@@ -30,11 +30,17 @@ pytest tests/test_vision_api.py -v
 pytest tests/test_api.py::TestInvalidInput -v
 pytest tests/test_api.py::TestInvalidInput::test_不正なモードを拒否する -v
 
+# E2Eテスト（Playwright必須、別途 playwright install chromium）
+pytest tests/e2e/ -v
+
 # リンター
 ruff check .
 
 # セキュリティスキャン
-bandit -r . --exclude ./venv
+bandit -r . --exclude ./tests,./venv,./.venv -q
+
+# 依存関係の脆弱性チェック
+pip-audit
 ```
 
 ## アーキテクチャ
@@ -47,24 +53,35 @@ bandit -r . --exclude ./venv
 
 ### バックエンド（Python/Flask）
 
-- **`app.py`**: Flaskエントリーポイント。`/api/analyze`エンドポイントでリクエストバリデーション（Base64検証、サイズ上限5MB、モード列挙チェック）とIP単位のサーバー側レート制限（20回/分、100回/日、TTLCacheで管理）を行う。ビジネスロジックは`vision_api.py`に委譲。
-- **`vision_api.py`**: Google Cloud Vision APIクライアント。`detect_content()`が単一エントリーポイント。テキストモードでは画像前処理（Pillow: コントラスト+シャープネス強調）を適用。`requests.Session`をモジュールレベルで共有し、リトライ戦略（3回、指数バックオフ、429/5xx再試行）を組み込み。レスポンス解析は`_parse_text_response()`と`_parse_label_response()`に分離。
-- **`translations.py`**: 物体検出ラベルの英日翻訳辞書（`OBJECT_TRANSLATIONS`）。`_parse_label_response()`がルックアップに使用。
+- **`app.py`**: Flaskエントリーポイント。`/api/analyze`エンドポイントでリクエストバリデーション（Base64検証、MIME magic byte検証、サイズ上限5MB、モード列挙チェック）とIP単位レート制限を行う。`before_request`で相関ID(`g.request_id`)とCSPノンス(`g.csp_nonce`)を生成。CORS Origin制限は`ALLOWED_ORIGINS`環境変数で設定。
+- **`rate_limiter.py`**: レート制限モジュール。Redis接続時はLuaスクリプトで原子的操作（マルチプロセス安全）、未接続時はインメモリ(TTLCache)にフォールバック。`try_consume_request()`/`release_request()`が公開API。
+- **`vision_api.py`**: Google Cloud Vision APIクライアント。`detect_content()`が単一エントリーポイント。テキストモードでは画像前処理（Pillow: コントラスト+シャープネス強調）を適用。`requests.Session`をモジュールレベルで共有し、リトライ戦略（3回、指数バックオフ、429/5xx再試行）を組み込み。
+- **`translations.py`**: 物体検出ラベルの英日翻訳辞書。
 
 ### フロントエンド（バニラJS）
 
-- **`static/script.js`**: カメラ制御、フレーム間差分による静止検知（`requestAnimationFrame`ループ）、ターゲットボックス内クロップ→Base64化→`/api/analyze`へPOST。API使用量はlocalStorageで日次管理。エラー時は5秒後に自動再試行。
-- **`templates/index.html`**: Jinja2テンプレート。左パネル（映像+コントロール）と右パネル（検出結果）の2カラム構成。
-- **`static/style.css`**: Glassmorphism風ダークテーマ。CSS変数でデザイントークン管理。768px以下でシングルカラムに切り替え。
+- **`static/script.js`**: カメラ制御、フレーム間差分による静止検知（`requestAnimationFrame`ループ）、ターゲットボックス内クロップ→Base64化→`/api/analyze`へPOST。API使用量はlocalStorageで日次管理。イベントハンドラは`init()`内で`addEventListener`登録（CSP準拠、HTML onclick属性なし）。
+- **`templates/index.html`**: Jinja2テンプレート。CSPノンスを`{{ csp_nonce }}`で受け取り。
+- **`static/style.css`**: Glassmorphism風ダークテーマ。CSS変数でデザイントークン管理。`.hidden`ユーティリティクラスで表示制御。
 
-### レート制限の二重構造
+### セキュリティ構成
 
-クライアント側（localStorage: 100回/日）とサーバー側（TTLCache: 20回/分+100回/日、IP単位）の二重制限。**成功時のみカウント加算**する方針で、判定（`is_rate_limited`）と記録（`record_request`）を分離。
+- **CSP**: `script-src 'self'`、`style-src 'self' 'nonce-...'`（unsafe-inline排除）
+- **CORS**: デフォルト同一オリジンのみ。`ALLOWED_ORIGINS`で明示的に許可
+- **相関ID**: 全リクエストに`X-Request-Id`ヘッダー付与（ログと一致）
+- **MIME検証**: JPEG/PNGのmagic byte検証（Base64デコード後）
+- **レート制限**: Redis原子操作 or インメモリ二重構造（分間+日次）
+
+### CI/CD
+
+- `.github/workflows/ci.yml`: pytest + ruff + bandit + pip-audit
+- `.github/dependabot.yml`: pip依存+GitHub Actions週次チェック
 
 ## テスト構成
 
-- `tests/test_api.py`: Flaskテストクライアントを使用したAPIエンドポイントテスト。`detect_content`をモックしてバリデーション4系統（正常OCR / 正常物体検出 / 不正入力 / API障害）をカバー。
-- `tests/test_vision_api.py`: `vision_api.py`の単体テスト。`session.post`をモックしてHTTPエラー、タイムアウト、部分エラー、パーサー境界ケースをカバー。
+- `tests/test_api.py`: Flaskテストクライアントを使用したAPIエンドポイントテスト（正常OCR / 物体検出 / 不正入力 / API障害 / セキュリティヘッダー / CORS / request-id / MIME検証）
+- `tests/test_vision_api.py`: `vision_api.py`の単体テスト（HTTPエラー、タイムアウト、部分エラー、パーサー境界ケース）
+- `tests/e2e/`: Playwright E2Eテスト（ページ読み込み、モード切替、エラー表示）
 
 ## 環境変数（`.env`）
 
@@ -75,6 +92,11 @@ bandit -r . --exclude ./venv
 | `VERIFY_SSL` | No | SSL検証（デフォルト`true`） |
 | `FLASK_DEBUG` | No | デバッグモード（デフォルト`false`） |
 | `NO_PROXY_MODE` | No | `true`でプロキシ設定を無視 |
+| `ADMIN_SECRET` | No | 管理API認証シークレット |
+| `REDIS_URL` | No | Redisレート制限用（未設定=インメモリ） |
+| `ALLOWED_ORIGINS` | No | CORS許可Origin（カンマ区切り） |
+| `RATE_LIMIT_PER_MINUTE` | No | 分間上限（デフォルト20） |
+| `RATE_LIMIT_DAILY` | No | 日次上限（デフォルト100） |
 
 ## コーディング規約
 
@@ -85,4 +107,5 @@ bandit -r . --exclude ./venv
 - テスト名は日本語可（例: `test_テキスト抽出が正常に動作する`）
 - APIレスポンス形式: `{"ok": bool, "data": list, "error_code": str|None, "message": str|None}`
 - XSS対策: フロントエンドでは`innerHTML`ではなくDOM操作（`textContent`/`createTextNode`）を使用
+- CSP対策: HTML inline属性（onclick, style）禁止 → JSイベントリスナー/CSSクラスを使用
 - MVVMや継承パターンは使用しない

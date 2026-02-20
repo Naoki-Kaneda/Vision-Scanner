@@ -8,15 +8,15 @@ import base64
 import pytest
 from unittest.mock import MagicMock
 
-from app import app, rate_limit_store, daily_count_store
+from app import app
+from rate_limiter import reset_for_testing
 
 
 # ─── 共有フィクスチャ ──────────────────────────────
 @pytest.fixture
 def client():
     """Flaskテストクライアントを作成する。テスト間でレート制限ステートをリセット。"""
-    rate_limit_store.clear()
-    daily_count_store.clear()
+    reset_for_testing()
 
     app.config["TESTING"] = True
     with app.test_client() as c:
@@ -51,6 +51,18 @@ def create_valid_image_base64():
         b'\xab\xa1\xca\xff\xd9'
     )
     return base64.b64encode(jpeg_bytes).decode("utf-8")
+
+
+def create_valid_png_base64():
+    """テスト用の最小限の有効なPNG画像をBase64で返す。"""
+    # 最小限の有効なPNGバイナリ（1x1ピクセル、赤色）
+    png_bytes = (
+        b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01'
+        b'\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00'
+        b'\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00'
+        b'\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82'
+    )
+    return base64.b64encode(png_bytes).decode("utf-8")
 
 
 def make_b64(data=b"\xff\xd8\xff\xd9"):

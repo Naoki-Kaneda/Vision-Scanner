@@ -184,7 +184,7 @@ async function setupCamera() {
 
         // カメラが2台以上あれば切り替えボタンを表示
         if (videoDevices.length > 1) {
-            btnSwitchCam.style.display = 'inline-block';
+            btnSwitchCam.classList.remove('hidden');
         }
 
         const constraints = {
@@ -274,7 +274,7 @@ function startScanning() {
     statusText.textContent = '静止を待っています...';
 
     // 安定化バーを表示
-    stabilityBarContainer.style.display = 'block';
+    stabilityBarContainer.classList.remove('hidden');
     stabilityBarFill.style.width = '0%';
 
     requestAnimationFrame(scanLoop);
@@ -296,7 +296,7 @@ function stopScanning() {
     statusText.textContent = '準備完了';
 
     // 安定化バーを非表示
-    stabilityBarContainer.style.display = 'none';
+    stabilityBarContainer.classList.add('hidden');
 }
 
 /** requestAnimationFrameベースのスキャンループ。 */
@@ -645,6 +645,17 @@ function setMode(mode) {
 
 /** アプリケーションを初期化する。 */
 function init() {
+    // ─── イベントリスナー登録（CSP準拠: HTML onclick 属性を排除） ──
+    btnCamera.addEventListener('click', () => switchSource('camera'));
+    btnSwitchCam.addEventListener('click', toggleCameraDevice);
+    btnFile.addEventListener('click', () => document.getElementById('file-input').click());
+    document.getElementById('file-input').addEventListener('change', handleFileUpload);
+    document.getElementById('btn-mirror').addEventListener('click', toggleMirror);
+    modeText.addEventListener('click', () => setMode('text'));
+    modeObject.addEventListener('click', () => setMode('object'));
+    btnScan.addEventListener('click', toggleScanning);
+    document.getElementById('btn-clear').addEventListener('click', clearResults);
+
     setupCamera();
     updateMirrorState();
     loadApiUsage();
