@@ -1,17 +1,40 @@
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Vision AI Scanner - スタイルシート
+   Vision AI Scanner - Material Design 3 Dark Theme
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-/* ─── カスタムプロパティ（デザイントークン） ───────── */
+/* ─── MD3 カラートークン（ダークテーマ） ─────────── */
 :root {
-    --bg-color: #0f1115;
-    --panel-bg: rgba(30, 34, 45, 0.7);
-    --primary-color: #00f2ff;
-    --primary-glow: rgba(0, 242, 255, 0.4);
-    --text-primary: #ffffff;
-    --text-secondary: #a0a4b0;
-    --accent-red: #ff3b3b;
-    --glass-border: 1px solid rgba(255, 255, 255, 0.1);
+    --md-primary: #A8C7FA;
+    --md-on-primary: #062E6F;
+    --md-primary-container: #1B4A8B;
+    --md-on-primary-container: #D3E3FD;
+    --md-secondary: #BCC7DC;
+    --md-on-secondary: #263141;
+    --md-secondary-container: #3C4758;
+    --md-tertiary: #D4BEE6;
+    --md-error: #FFB4AB;
+    --md-error-container: #93000A;
+    --md-on-error-container: #FFDAD6;
+    --md-surface: #131316;
+    --md-surface-container-lowest: #0E0E11;
+    --md-surface-container-low: #1B1B1F;
+    --md-surface-container: #1F1F23;
+    --md-surface-container-high: #2A2A2E;
+    --md-surface-container-highest: #353539;
+    --md-on-surface: #E5E1E6;
+    --md-on-surface-variant: #C7C5D0;
+    --md-outline: #918F9A;
+    --md-outline-variant: #49474E;
+    /* エレベーション */
+    --md-elevation-1: 0 1px 3px 1px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --md-elevation-2: 0 2px 6px 2px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.3);
+    /* トランジション */
+    --md-motion-standard: 0.2s cubic-bezier(0.2, 0, 0, 1);
+    --md-motion-emphasized: 0.3s cubic-bezier(0.2, 0, 0, 1);
+    --md-shape-corner-m: 12px;
+    --md-shape-corner-l: 16px;
+    --md-shape-corner-xl: 28px;
+    --md-shape-corner-full: 9999px;
 }
 
 /* ─── リセット ──────────────────────────────── */
@@ -29,11 +52,8 @@
 /* ─── ベースレイアウト ───────────────────────── */
 body {
     font-family: 'Inter', 'Noto Sans JP', sans-serif;
-    background-color: var(--bg-color);
-    background-image:
-        radial-gradient(circle at 10% 20%, rgba(0, 242, 255, 0.1) 0%, transparent 20%),
-        radial-gradient(circle at 90% 80%, rgba(100, 50, 255, 0.1) 0%, transparent 20%);
-    color: var(--text-primary);
+    background-color: var(--md-surface);
+    color: var(--md-on-surface);
     height: 100vh;
     overflow: hidden;
     display: flex;
@@ -43,84 +63,114 @@ body {
 
 .container {
     width: 95%;
-    height: 90vh;
+    height: 92vh;
     max-width: 1400px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 16px;
 }
 
-/* ─── ヘッダー ──────────────────────────────── */
+/* ─── ヘッダー（Top App Bar風） ─────────────── */
 header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0 10px;
+    padding: 8px 16px;
+    background: var(--md-surface-container);
+    border-radius: var(--md-shape-corner-l);
+    min-height: 48px;
 }
 
 h1 {
-    font-weight: 700;
-    letter-spacing: -0.5px;
-    background: linear-gradient(90deg, #fff, #a0a4b0);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    letter-spacing: 0;
 }
 
 .status-indicator {
     display: flex;
     align-items: center;
     gap: 8px;
-    background: rgba(255, 255, 255, 0.05);
-    padding: 6px 12px;
-    border-radius: 20px;
-    border: var(--glass-border);
 }
 
 #status-dot {
     width: 8px;
     height: 8px;
-    background-color: var(--text-secondary);
+    background-color: var(--md-outline);
     border-radius: 50%;
-    transition: background-color 0.3s, box-shadow 0.3s;
+    transition: all var(--md-motion-standard);
 }
 
 #status-dot.active {
-    background-color: var(--primary-color);
-    box-shadow: 0 0 10px var(--primary-glow);
+    background-color: var(--md-primary);
+    box-shadow: 0 0 8px rgba(168, 199, 250, 0.5);
 }
 
+#status-text {
+    font-size: 0.8rem;
+    color: var(--md-on-surface-variant);
+}
+
+/* ─── MD3 Chip（API/Proxy表示） ────────────── */
 .api-counter {
     font-size: 0.75rem;
-    color: var(--primary-color);
-    font-family: monospace;
-    margin-right: 8px;
-    padding: 2px 8px;
-    border: 1px solid rgba(0, 242, 255, 0.3);
-    border-radius: 6px;
+    color: var(--md-primary);
+    font-family: 'Inter', monospace;
+    padding: 4px 12px;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-shape-corner-full);
+    background: transparent;
+    line-height: 1;
+}
+
+.proxy-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--md-surface-container-high);
+    color: var(--md-on-surface-variant);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-shape-corner-full);
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    cursor: default;
+    font-family: inherit;
+    transition: all var(--md-motion-standard);
+    line-height: 1;
+}
+
+.proxy-badge.active {
+    background: var(--md-primary-container);
+    color: var(--md-on-primary-container);
+    border-color: var(--md-primary-container);
+}
+
+.proxy-badge.inactive {
+    background: var(--md-surface-container-high);
+    color: var(--md-on-surface-variant);
+    border-color: var(--md-outline-variant);
 }
 
 /* ─── メイングリッド ────────────────────────── */
 .main-grid {
     display: grid;
     grid-template-columns: 1.5fr 1fr;
-    gap: 20px;
+    gap: 16px;
     flex: 1;
     min-height: 0;
 }
 
-/* ─── パネル共通 ────────────────────────────── */
+/* ─── パネル共通（MD3 Surface Container） ───── */
 .panel {
-    background: var(--panel-bg);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: var(--glass-border);
-    border-radius: 24px;
-    padding: 20px;
+    background: var(--md-surface-container);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-shape-corner-l);
+    padding: 16px;
     display: flex;
     flex-direction: column;
     gap: 12px;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--md-elevation-1);
     min-height: 0;
     overflow: hidden;
 }
@@ -129,27 +179,26 @@ h1 {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 15px;
+    gap: 12px;
     flex-wrap: wrap;
 }
 
 h2 {
-    font-size: 1.1rem;
-    color: var(--text-secondary);
+    font-size: 0.9rem;
+    color: var(--md-on-surface-variant);
     font-weight: 600;
     margin-right: auto;
     display: none;
-    /* スペース節約のため非表示 */
 }
 
 /* ─── 映像コンテナ ──────────────────────────── */
 .video-container {
     flex: 1;
     background: #000;
-    border-radius: 16px;
+    border-radius: var(--md-shape-corner-m);
     overflow: hidden;
     position: relative;
-    border: var(--glass-border);
+    border: 1px solid var(--md-outline-variant);
     max-height: 48vh;
 }
 
@@ -175,17 +224,17 @@ video {
     z-index: 15;
 }
 
-/* ─── スキャンオーバーレイ（走査線アニメーション） ─ */
+/* ─── スキャンオーバーレイ（走査線） ────────────── */
 .scan-overlay {
     position: absolute;
     top: 50%;
     left: 10%;
     width: 80%;
     height: 2px;
-    background: var(--primary-color);
-    box-shadow: 0 0 15px var(--primary-glow);
+    background: var(--md-primary);
+    box-shadow: 0 0 12px rgba(168, 199, 250, 0.4);
     opacity: 0;
-    transition: opacity 0.3s;
+    transition: opacity var(--md-motion-standard);
 }
 
 .scanning .scan-overlay {
@@ -194,81 +243,68 @@ video {
 }
 
 @keyframes scanAnimation {
-    0% {
-        top: 10%;
-        opacity: 0;
-    }
-
-    10% {
-        opacity: 1;
-    }
-
-    90% {
-        opacity: 1;
-    }
-
-    100% {
-        top: 90%;
-        opacity: 0;
-    }
+    0% { top: 10%; opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { top: 90%; opacity: 0; }
 }
 
-/* ─── ターゲットボックス（OCR読み取り範囲） ───── */
+/* ─── ターゲットボックス ─────────────────────── */
 .target-box {
     position: absolute;
     top: 20%;
     left: 20%;
     width: 60%;
     height: 60%;
-    border: 2px dashed rgba(0, 242, 255, 0.6);
-    border-radius: 8px;
+    border: 2px dashed rgba(168, 199, 250, 0.5);
+    border-radius: var(--md-shape-corner-m);
     pointer-events: none;
     z-index: 10;
-    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.3);
 }
 
-/* ─── 安定化プログレスバー ───────────────────── */
+/* ─── 安定化プログレスバー（MD3 Linear Progress） ─ */
 .stability-bar-container {
     position: absolute;
-    top: 10px;
+    bottom: 52px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 20;
-    text-align: center;
-    width: 80%;
+    width: 60%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
 }
 
 .stability-help {
-    color: #fff;
-    font-size: 0.85rem;
-    background: rgba(0, 0, 0, 0.7);
-    padding: 6px 14px;
-    border-radius: 8px;
-    margin-bottom: 6px;
-    backdrop-filter: blur(5px);
-    display: inline-block;
+    color: var(--md-on-surface);
+    font-size: 0.75rem;
+    background: var(--md-surface-container-highest);
+    padding: 4px 12px;
+    border-radius: var(--md-shape-corner-full);
+    line-height: 1.4;
 }
 
 .stability-bar-track {
     width: 100%;
-    height: 6px;
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
+    height: 4px;
+    background: var(--md-surface-container-highest);
+    border-radius: 2px;
     overflow: hidden;
 }
 
 .stability-bar-fill {
     width: 0%;
     height: 100%;
-    background: linear-gradient(90deg, var(--primary-color), #00ff88);
-    border-radius: 3px;
-    transition: width 0.1s linear;
-    box-shadow: 0 0 8px var(--primary-glow);
+    background: var(--md-primary);
+    border-radius: 2px;
+    transition: width 0.15s linear;
 }
 
 .stability-bar-fill.captured {
-    background: linear-gradient(90deg, #00ff88, #44ffaa);
-    box-shadow: 0 0 12px rgba(0, 255, 136, 0.6);
+    background: #81C784;
+    transition: width 0.05s linear;
 }
 
 /* ─── 映像内ツールバー ──────────────────────── */
@@ -278,122 +314,133 @@ video {
     left: 50%;
     transform: translateX(-50%);
     display: flex;
-    gap: 10px;
+    gap: 8px;
     align-items: center;
     z-index: 15;
-    background: rgba(0, 0, 0, 0.6);
-    padding: 6px 12px;
-    border-radius: 10px;
-    backdrop-filter: blur(8px);
+    background: var(--md-surface-container-highest);
+    padding: 4px 8px;
+    border-radius: var(--md-shape-corner-full);
 }
 
+/* ─── MD3 Tool Button（アイコンボタン風） ────── */
 .tool-btn {
     background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: var(--text-secondary);
-    padding: 4px 10px;
-    border-radius: 6px;
+    border: 1px solid var(--md-outline-variant);
+    color: var(--md-on-surface-variant);
+    padding: 6px 12px;
+    border-radius: var(--md-shape-corner-full);
     cursor: pointer;
     font-size: 0.8rem;
     font-family: inherit;
-    transition: all 0.2s;
+    transition: all var(--md-motion-standard);
 }
 
 .tool-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: rgba(168, 199, 250, 0.08);
+    color: var(--md-on-surface);
 }
 
-/* ─── モード切り替え（Text / Object） ─────────── */
+/* ─── MD3 Segmented Button（モード切替） ────── */
 .mode-switch {
     display: flex;
-    gap: 2px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    padding: 2px;
+    border: 1px solid var(--md-outline);
+    border-radius: var(--md-shape-corner-full);
+    overflow: hidden;
 }
 
 .mode-btn {
     background: transparent;
     border: none;
-    color: var(--text-secondary);
-    padding: 5px 14px;
-    border-radius: 6px;
+    border-right: 1px solid var(--md-outline);
+    color: var(--md-on-surface-variant);
+    padding: 6px 16px;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     font-family: inherit;
     font-weight: 600;
-    transition: all 0.2s;
+    transition: all var(--md-motion-standard);
+}
+
+.mode-btn:last-child {
+    border-right: none;
 }
 
 .mode-btn.active {
-    background: var(--primary-color);
-    color: #000;
-    box-shadow: 0 0 10px var(--primary-glow);
+    background: var(--md-secondary-container);
+    color: var(--md-on-surface);
 }
 
 .mode-btn:hover:not(.active) {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(188, 199, 220, 0.08);
+    color: var(--md-on-surface);
 }
 
-/* ─── ソース切り替えボタン ────────────────────── */
+/* ─── MD3 Outlined Button（ソース切替） ─────── */
 .controls {
     display: flex;
-    gap: 10px;
+    gap: 8px;
 }
 
 .control-btn {
     background: transparent;
-    border: var(--glass-border);
-    color: var(--text-secondary);
+    border: 1px solid var(--md-outline);
+    color: var(--md-on-surface-variant);
     padding: 6px 16px;
-    border-radius: 8px;
+    border-radius: var(--md-shape-corner-full);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--md-motion-standard);
     font-family: inherit;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+    font-weight: 500;
 }
 
-.control-btn.active,
-.control-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--text-primary);
-    border-color: rgba(255, 255, 255, 0.3);
+.control-btn.active {
+    background: var(--md-secondary-container);
+    color: var(--md-on-surface);
+    border-color: transparent;
 }
 
-/* ─── アクションボタン（Start / Stop） ─────────── */
+.control-btn:hover:not(.active) {
+    background: rgba(188, 199, 220, 0.08);
+}
+
+/* ─── MD3 Filled Button（スタート/ストップ） ─── */
 .primary-btn {
     width: 100%;
     padding: 14px;
-    border-radius: 12px;
+    border-radius: var(--md-shape-corner-full);
     border: none;
-    background: var(--text-primary);
-    color: #000;
-    font-weight: 700;
-    font-size: 1rem;
+    background: var(--md-primary);
+    color: var(--md-on-primary);
+    font-weight: 600;
+    font-size: 0.95rem;
     cursor: pointer;
-    transition: transform 0.1s, box-shadow 0.2s;
+    transition: all var(--md-motion-standard);
     display: flex;
     justify-content: center;
     align-items: center;
     gap: 8px;
+    letter-spacing: 0.02em;
+    box-shadow: var(--md-elevation-1);
 }
 
 .primary-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--md-elevation-2);
+    filter: brightness(1.08);
+}
+
+.primary-btn:active {
+    transform: scale(0.98);
 }
 
 .primary-btn.scanning {
-    background: var(--accent-red);
-    color: #fff;
-    box-shadow: 0 0 20px rgba(255, 59, 59, 0.4);
+    background: var(--md-error);
+    color: #1A0000;
 }
 
 .action-bar {
     margin-top: auto;
-    padding-top: 10px;
+    padding-top: 8px;
     position: relative;
     z-index: 50;
 }
@@ -404,63 +451,62 @@ video {
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding-right: 5px;
+    gap: 8px;
+    padding-right: 4px;
 }
 
 .result-item {
-    background: rgba(255, 255, 255, 0.05);
-    padding: 12px;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    font-size: 0.95rem;
-    animation: slideIn 0.3s ease-out;
+    background: var(--md-surface-container-high);
+    padding: 12px 16px;
+    border-radius: var(--md-shape-corner-m);
+    font-size: 0.9rem;
+    animation: slideIn 0.25s cubic-bezier(0.2, 0, 0, 1);
     white-space: pre-wrap;
     word-break: break-all;
+    line-height: 1.5;
 }
 
 .timestamp {
-    color: var(--text-secondary);
-    font-size: 0.8rem;
+    color: var(--md-on-surface-variant);
+    font-size: 0.75rem;
     margin-right: 8px;
-    font-family: monospace;
+    font-family: 'Inter', monospace;
+    opacity: 0.7;
 }
 
 @keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .placeholder-text {
     text-align: center;
-    color: var(--text-secondary);
+    color: var(--md-on-surface-variant);
     margin-top: 50px;
     opacity: 0.5;
+    font-size: 0.9rem;
 }
 
+/* ─── MD3 Text Button（クリア） ─────────────── */
 .clear-btn {
     background: transparent;
     border: none;
-    color: var(--text-secondary);
+    color: var(--md-primary);
     cursor: pointer;
     font-size: 0.85rem;
-    text-decoration: underline;
+    font-weight: 500;
+    padding: 4px 8px;
+    border-radius: var(--md-shape-corner-full);
+    transition: background var(--md-motion-standard);
 }
 
 .clear-btn:hover {
-    color: var(--text-primary);
+    background: rgba(168, 199, 250, 0.08);
 }
 
 /* ─── スクロールバー ────────────────────────── */
 ::-webkit-scrollbar {
-    width: 6px;
+    width: 4px;
 }
 
 ::-webkit-scrollbar-track {
@@ -468,12 +514,12 @@ video {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
+    background: var(--md-outline-variant);
+    border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--md-outline);
 }
 
 /* ─── レスポンシブ対応 ──────────────────────── */
@@ -481,7 +527,7 @@ video {
     body {
         height: auto;
         overflow: auto;
-        padding: 10px;
+        padding: 8px;
     }
 
     .container {
@@ -509,43 +555,16 @@ video {
     }
 
     h1 {
-        font-size: 1.2rem;
+        font-size: 1.1rem;
     }
 
     .primary-btn {
         padding: 12px;
         font-size: 0.9rem;
     }
-}
 
-/* ─── Proxy Button Style ────────────────────── */
-.proxy-badge {
-    display: inline-block;
-    background: #333;
-    color: #fff;
-    border: 1px solid #555;
-    border-radius: 4px;
-    padding: 4px 10px;
-    font-size: 0.85rem;
-    cursor: pointer;
-    font-family: inherit;
-    transition: all 0.2s;
-    margin-right: 12px;
-    vertical-align: middle;
-}
-
-.proxy-badge:hover {
-    opacity: 0.8;
-}
-
-.proxy-badge.active {
-    background: #28a745;
-    color: #fff;
-    border-color: #28a745;
-}
-
-.proxy-badge.inactive {
-    background: #6c757d;
-    color: #fff;
-    border-color: #6c757d;
+    .status-indicator {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
 }

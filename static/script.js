@@ -320,7 +320,11 @@ function scanLoop() {
     requestAnimationFrame(scanLoop);
 }
 
-/** フレーム間差分で安定状態を検出し、安定したらキャプチャする。 */
+/**
+ * フレーム間差分で安定状態を検出し、安定したらキャプチャする。
+ * statusText は状態遷移時のみ更新（チラつき防止）。進捗はプログレスバーのみ。
+ */
+let lastStabilityState = 'idle'; // idle | stabilizing | captured | moving
 function checkStabilityAndCapture() {
     if (!video.videoWidth) return;
 
@@ -346,21 +350,27 @@ function checkStabilityAndCapture() {
                 stabilityBarFill.style.width = progress + '%';
                 stabilityBarFill.classList.remove('captured');
             }
-            if (statusText) statusText.textContent = `安定化中... ${Math.round(progress)}%`;
+            // 状態遷移時のみテキスト更新（毎フレーム更新しない）
+            if (lastStabilityState !== 'stabilizing') {
+                lastStabilityState = 'stabilizing';
+                if (statusText) statusText.textContent = '安定検出中...';
+            }
 
             if (stabilityCounter >= STABILITY_THRESHOLD) {
                 // 安定完了 → キャプチャ実行
+                lastStabilityState = 'captured';
                 if (stabilityBarFill) {
                     stabilityBarFill.style.width = '100%';
                     stabilityBarFill.classList.add('captured');
                 }
-                if (statusText) statusText.textContent = '📸 撮影完了！';
+                if (statusText) statusText.textContent = '撮影完了';
                 captureAndAnalyze();
                 stabilityCounter = 0;
 
                 // 短い遅延後にバーをリセット
                 setTimeout(() => {
                     if (isScanning) {
+                        lastStabilityState = 'idle';
                         if (stabilityBarFill) {
                             stabilityBarFill.style.width = '0%';
                             stabilityBarFill.classList.remove('captured');
@@ -376,7 +386,10 @@ function checkStabilityAndCapture() {
                 stabilityBarFill.style.width = '0%';
                 stabilityBarFill.classList.remove('captured');
             }
-            if (statusText) statusText.textContent = '動きを検出中...';
+            if (lastStabilityState !== 'moving') {
+                lastStabilityState = 'moving';
+                if (statusText) statusText.textContent = '動きを検出中...';
+            }
         }
     }
 
