@@ -253,6 +253,14 @@ def get_daily_count(client_ip):
     return _get_backend().get_daily_count(client_ip)
 
 
+def get_backend_type():
+    """現在のレート制限バックエンド種別を返す（監視・readyz用）。"""
+    backend = _get_backend()
+    if isinstance(backend, RedisRateLimiter):
+        return "redis"
+    return "in_memory"
+
+
 def reset_for_testing():
     """テスト用: バックエンドをインメモリにリセットする。"""
     global _backend

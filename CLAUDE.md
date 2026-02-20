@@ -79,9 +79,9 @@ pip-audit
 
 ## テスト構成
 
-- `tests/test_api.py`: Flaskテストクライアントを使用したAPIエンドポイントテスト（正常OCR / 物体検出 / 不正入力 / API障害 / セキュリティヘッダー / CORS / request-id / MIME検証）
-- `tests/test_vision_api.py`: `vision_api.py`の単体テスト（HTTPエラー、タイムアウト、部分エラー、パーサー境界ケース）
-- `tests/e2e/`: Playwright E2Eテスト（ページ読み込み、モード切替、エラー表示）
+- `tests/test_api.py`: Flaskテストクライアントを使用したAPIエンドポイントテスト（正常OCR / 物体検出 / 不正入力 / API障害 / セキュリティヘッダー / CORS / request-id / MIME検証 / レート制限設定API / ヘルスチェック）
+- `tests/test_vision_api.py`: `vision_api.py`の単体テスト（HTTPエラー、タイムアウト、部分エラー、パーサー境界ケース、プロキシ状態4パターン回帰テスト）
+- `tests/e2e/`: Playwright E2Eテスト（ページ読み込み、モード切替、エラー表示、設定API反映検証）
 
 ## 環境変数（`.env`）
 

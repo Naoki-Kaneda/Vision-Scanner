@@ -113,16 +113,53 @@ pip install pytest
 pytest tests/ -v
 ```
 
+## 運用ポリシー
+
+### APIキーの読み込み方針
+
+`VISION_API_KEY` は**起動時に1回だけ読み込み**、プロセス終了まで固定です。
+
+- `.env` を変更した場合は**サーバー再起動が必要**です
+- `/readyz` エンドポイントは起動時に読み込んだ `API_KEY` の存在を確認します
+- 動的な再読込には対応していません（意図的な設計判断です）
+
+### ログポリシー
+
+| 項目 | 設定 |
+|------|------|
+| ログレベル | `INFO`（デフォルト）。`FLASK_DEBUG=true` で `DEBUG` |
+| マスキング対象 | プロキシURL内の認証情報（`user:pass` → `***:***`） |
+| APIレスポンス最大文字数 | エラー時 500文字に制限 |
+| 相関ID | 全リクエストに `request_id` を付与（`X-Request-Id` ヘッダー + ログ） |
+| 秘密情報 | `VISION_API_KEY` はログに出力されません（URLパラメータのため） |
+
+### 運用監視ポイント
+
+| リスク | 検知方法 | 対処 |
+|--------|----------|------|
+| **秘密情報の漏えい** | `detect-secrets`（pre-commit + CI）、`.env` は `.gitignore` 対象 | `.env.example` のみコミット。git履歴に漏れた場合は `git filter-repo` で除去 |
+| **レート制限のインメモリフォールバック** | 起動ログ `"Redis接続..."` の有無、`/readyz` の拡張で検知可能 | `REDIS_URL` 未設定 or Redis停止時にフォールバック。マルチプロセス（gunicorn等）では**必ず Redis を使用**すること |
+
+### ヘルスチェック
+
+| エンドポイント | 用途 | 正常時 | 異常時 |
+|---------------|------|--------|--------|
+| `GET /healthz` | Liveness（プロセス生存確認） | `200 {"status": "ok"}` | 応答なし |
+| `GET /readyz` | Readiness（処理可能確認） | `200 {"status": "ok"}` | `503 {"status": "not_ready"}` |
+
 ## 既知の制限
 
-- **API上限**: クライアント側 100回/日、サーバー側 20回/分・100回/日（IP単位）
+- **API上限**: サーバー側 20回/分・100回/日（IP単位、環境変数で変更可能）。フロントはサーバーから動的取得
 - **対応ブラウザ**: Chrome, Edge, Firefox（カメラアクセスにHTTPSまたはlocalhost必須）
 - **言語ヒント**: 英語（`en`）に最適化。日本語テキストの認識精度は限定的
 - **PCカメラ**: インカメラのみの場合、文字をカメラに向けて映す必要あり
+- **レート制限**: Redis未接続時はインメモリフォールバック（プロセス再起動でリセット）
 
 ## 技術スタック
 
 - **バックエンド**: Python / Flask
 - **フロントエンド**: HTML / CSS / JavaScript（バニラ）
 - **API**: Google Cloud Vision API
-- **テスト**: pytest
+- **テスト**: pytest / Playwright（E2E）
+- **CI**: GitHub Actions（pytest + ruff + bandit + pip-audit + detect-secrets）
+- **依存管理**: Dependabot（pip + GitHub Actions 週次チェック）

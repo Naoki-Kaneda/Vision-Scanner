@@ -13,7 +13,7 @@ from flask import Flask, render_template, request, jsonify, g
 from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
 from vision_api import detect_content, get_proxy_status, set_proxy_enabled, VALID_MODES, API_KEY
-from rate_limiter import try_consume_request, release_request, RATE_LIMIT_DAILY
+from rate_limiter import try_consume_request, release_request, RATE_LIMIT_DAILY, get_backend_type
 
 # ─── 設定 ──────────────────────────────────────
 load_dotenv()
@@ -202,12 +202,17 @@ def healthz():
 
 @app.route("/readyz")
 def readyz():
-    """Readiness: リクエスト処理可能か（APIキー等の設定チェック）"""
+    """Readiness: リクエスト処理可能か（APIキー・バックエンド等の設定チェック）"""
+    rate_backend = get_backend_type()
     checks = {
         "api_key_configured": bool(API_KEY),
+        "rate_limiter_backend": rate_backend,
     }
-    all_ok = all(checks.values())
-    return jsonify({"status": "ok" if all_ok else "not_ready", "checks": checks}), 200 if all_ok else 503
+    all_ok = bool(API_KEY)
+    return jsonify({
+        "status": "ok" if all_ok else "not_ready",
+        "checks": checks,
+    }), 200 if all_ok else 503
 
 
 # ─── ルーティング ────────────────────────────────

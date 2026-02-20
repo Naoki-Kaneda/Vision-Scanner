@@ -530,6 +530,7 @@ class TestHealthChecks:
         data = response.get_json()
         assert data["status"] == "ok"
         assert data["checks"]["api_key_configured"] is True
+        assert data["checks"]["rate_limiter_backend"] in ("redis", "in_memory")
 
     @patch("app.API_KEY", "")
     def test_readyzがAPIキー未設定で503を返す(self, client):

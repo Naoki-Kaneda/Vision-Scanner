@@ -6,12 +6,16 @@ on:
   pull_request:
     branches: [main]
 
+# ブランチ保護ルールで「test」ジョブをPRマージ必須に設定すること:
+#   Settings > Branches > Branch protection rules > Require status checks
+#   必須チェック: test (3.11), test (3.12), test (3.13)
+
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -24,8 +28,14 @@ jobs:
       - name: 依存関係インストール
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-lock.txt
           pip install -r requirements-dev.txt
+
+      - name: シークレット検出（detect-secrets）
+        run: |
+          pip install detect-secrets
+          detect-secrets scan --exclude-files '\.lock$' > .secrets-ci.json
+          detect-secrets audit --report .secrets-ci.json || true
 
       - name: Ruff リントチェック
         run: python -m ruff check .

@@ -83,3 +83,34 @@ class TestErrorDisplay:
         data = response.json()
         assert data["ok"] is False
         assert data["error_code"] == "INVALID_FORMAT"
+
+
+class TestConfigEndpoints:
+    """設定APIエンドポイントのE2E検証。"""
+
+    def test_APIカウンタにサーバー上限値が反映される(self, page):
+        """loadRateLimits() によりAPIカウンタの上限表示がサーバー値に更新されること。"""
+        counter = page.locator("#api-counter")
+        # loadRateLimits() の非同期完了を待つ（上限値が "--" から数値に変わる）
+        page.wait_for_function(
+            "() => !document.getElementById('api-counter').textContent.includes('--')",
+            timeout=5000,
+        )
+        text = counter.text_content()
+        # "API: 0/100" のような形式を検証（数値は環境依存だが必ず数字/数字）
+        assert "API:" in text
+        assert "/" in text
+        parts = text.split("/")
+        assert parts[-1].strip().isdigit()
+
+    def test_Proxyバッジに設定状態が表示される(self, page):
+        """Proxy設定バッジが 'Proxy設定: ON' または 'Proxy設定: OFF' を表示すること。"""
+        badge = page.locator("#btn-proxy")
+        # loadProxyConfig() の非同期完了を待つ（"--" から ON/OFF に変わる）
+        page.wait_for_function(
+            "() => !document.getElementById('btn-proxy').textContent.includes('--')",
+            timeout=5000,
+        )
+        text = badge.text_content()
+        assert "Proxy設定:" in text
+        assert ("ON" in text or "OFF" in text)
