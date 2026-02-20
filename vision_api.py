@@ -125,7 +125,7 @@ def detect_content(image_content_base64, mode="text"):
             {
                 "image": {"content": image_content_base64},
                 "features": [{"type": feature_type, "maxResults": 10}],
-                "imageContext": {"languageHints": ["en"]},
+                "imageContext": {"languageHints": ["en", "ja"]},
             }
         ]
     }
