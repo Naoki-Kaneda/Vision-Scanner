@@ -1,6 +1,6 @@
 """
 Vision AI Scanner - APIエンドポイントのテスト。
-正常系（OCR/物体検出）、不正入力、API失敗時、セキュリティの5系統をカバー。
+正常系（OCR/物体検出）、不正入力、API失敗時、セキュリティ、エラーハンドラの6系統をカバー。
 """
 
 import base64
@@ -300,3 +300,79 @@ class TestRateLimitAtomicity:
         ip = "127.0.0.1"
         daily = daily_count_store.get(ip, {"count": 0})
         assert daily["count"] == 0
+
+
+# ─── エラーハンドラテスト ──────────────────────
+class TestErrorHandlers:
+    """Flask例外ハンドラのJSONレスポンステスト。"""
+
+    def test_413エラーがJSONで返る(self, client):
+        """MAX_CONTENT_LENGTH 超過時にJSON応答が返ること。"""
+        # 11MBの巨大ペイロードを送信（MAX_REQUEST_BODY=10MB）
+        huge_payload = "x" * (11 * 1024 * 1024)
+        response = client.post(
+            "/api/analyze",
+            data=huge_payload,
+            content_type="application/json",
+        )
+        assert response.status_code == 413
+        data = response.get_json()
+        assert data["ok"] is False
+        assert data["error_code"] == "REQUEST_TOO_LARGE"
+
+
+class TestProxyGetAuth:
+    """プロキシGETの認証レベルテスト。"""
+
+    def test_未認証GETではURL情報が含まれない(self, client):
+        """認証なしGETでは enabled のみ返し、url は含まれないこと。"""
+        response = client.get("/api/config/proxy")
+        assert response.status_code == 200
+        data = response.get_json()
+        assert "enabled" in data
+        assert "url" not in data
+
+    @patch("app.ADMIN_SECRET", "test-secret-123")
+    def test_認証済みGETではURL情報が含まれる(self, client):
+        """認証ありGETでは url フィールドも返すこと。"""
+        response = client.get(
+            "/api/config/proxy",
+            headers={"X-Admin-Secret": "test-secret-123"},
+        )
+        assert response.status_code == 200
+        data = response.get_json()
+        assert "enabled" in data
+        assert "url" in data
+
+
+class TestProxyMalformedInput:
+    """プロキシPOSTの不正入力テスト。"""
+
+    @patch("app.ADMIN_SECRET", "test-secret-123")
+    def test_壊れたJSONでプロキシPOSTは400を返す(self, client):
+        """壊れたJSONボディの場合は400を返すこと。"""
+        response = client.post(
+            "/api/config/proxy",
+            data="{broken",
+            content_type="application/json",
+            headers={"X-Admin-Secret": "test-secret-123"},
+        )
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["error_code"] == "INVALID_FORMAT"
+
+
+class TestSecurityHeaders:
+    """セキュリティヘッダのテスト。"""
+
+    def test_CSPヘッダが存在する(self, client):
+        """レスポンスに Content-Security-Policy が含まれること。"""
+        response = client.get("/")
+        assert "Content-Security-Policy" in response.headers
+        csp = response.headers["Content-Security-Policy"]
+        assert "default-src 'self'" in csp
+
+    def test_レガシーXSSヘッダが存在しない(self, client):
+        """X-XSS-Protection ヘッダが含まれないこと。"""
+        response = client.get("/")
+        assert "X-XSS-Protection" not in response.headers

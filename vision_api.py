@@ -277,14 +277,24 @@ def _parse_text_response(response_data):
     if not text_annotations:
         return [], None
 
-    # 画像サイズを最初のアノテーション（フルテキスト）の座標から推定
-    full_bounds = text_annotations[0].get("boundingPoly", {}).get("vertices", [])
-    if full_bounds:
-        max_x = max(v.get("x", 0) for v in full_bounds)
-        max_y = max(v.get("y", 0) for v in full_bounds)
-        image_size = [max_x, max_y]
-    else:
-        image_size = None
+    # 画像サイズ取得: fullTextAnnotation.pages[0] が正確（APIが返す実画像寸法）
+    image_size = None
+    pages = response_data.get("fullTextAnnotation", {}).get("pages", [])
+    if pages:
+        page = pages[0]
+        pw = page.get("width", 0)
+        ph = page.get("height", 0)
+        if pw > 0 and ph > 0:
+            image_size = [pw, ph]
+
+    # フォールバック: fullTextAnnotation がない場合は最初のアノテーション座標から推定
+    if image_size is None:
+        full_bounds = text_annotations[0].get("boundingPoly", {}).get("vertices", [])
+        if full_bounds:
+            max_x = max(v.get("x", 0) for v in full_bounds)
+            max_y = max(v.get("y", 0) for v in full_bounds)
+            if max_x > 0 and max_y > 0:
+                image_size = [max_x, max_y]
 
     # textAnnotations[1:] が個別の単語/ブロック（座標付き）
     results = []

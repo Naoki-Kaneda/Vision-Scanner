@@ -7,6 +7,7 @@ import os
 import base64
 import logging
 import time
+import uuid
 from threading import Lock
 
 # メモリリーク対策: cachetoolsを必須とする（requirements.txtに追加済み）
@@ -52,12 +53,12 @@ def try_consume_request(client_ip):
     """
     レート制限のチェックと予約を原子的に行う（TOCTOU競合防止）。
 
-    制限内ならカウントを加算して (False, "") を返す。
-    制限超過なら加算せず (True, エラーメッセージ) を返す。
-    API呼び出し失敗時は release_request() で予約を取り消すこと。
+    制限内ならカウントを加算して (False, "", request_id) を返す。
+    制限超過なら加算せず (True, エラーメッセージ, None) を返す。
+    API呼び出し失敗時は release_request(client_ip, request_id) で予約を取り消すこと。
 
     Returns:
-        tuple: (制限中か, エラーメッセージ)
+        tuple: (制限中か, エラーメッセージ, request_id|None)
     """
     now = time.time()
     today = time.strftime("%Y-%m-%d")
@@ -69,43 +70,49 @@ def try_consume_request(client_ip):
             daily = {"date": today, "count": 0}
 
         if daily["count"] >= RATE_LIMIT_DAILY:
-            return True, f"1日あたりのAPI上限({RATE_LIMIT_DAILY}回)に達しました"
+            return True, f"1日あたりのAPI上限({RATE_LIMIT_DAILY}回)に達しました", None
 
-        # 分間制限チェック
-        timestamps = list(rate_limit_store.get(client_ip, []))
-        recent = [t for t in timestamps if now - t < 60]
+        # 分間制限チェック（エントリは (timestamp, request_id) のタプル）
+        entries = list(rate_limit_store.get(client_ip, []))
+        recent = [e for e in entries if now - e[0] < 60]
         if len(recent) >= RATE_LIMIT_PER_MINUTE:
-            return True, f"リクエスト頻度が高すぎます（上限: {RATE_LIMIT_PER_MINUTE}回/分）"
+            return True, f"リクエスト頻度が高すぎます（上限: {RATE_LIMIT_PER_MINUTE}回/分）", None
 
-        # チェック通過 → カウントを原子的に加算（予約）
-        rate_limit_store[client_ip] = recent + [now]
+        # チェック通過 → 一意IDで予約を原子的に記録
+        request_id = uuid.uuid4().hex[:12]
+        rate_limit_store[client_ip] = recent + [(now, request_id)]
         daily["count"] += 1
         daily_count_store[client_ip] = daily
 
-    return False, ""
+    return False, "", request_id
 
 
-def release_request(client_ip):
+def release_request(client_ip, request_id):
     """
-    API呼び出し失敗時に予約を取り消す。
-    try_consume_request で加算したカウントを1つ戻す。
+    API呼び出し失敗時に指定IDの予約のみを取り消す（並行リクエスト安全）。
     """
     now = time.time()
     today = time.strftime("%Y-%m-%d")
 
     with rate_limit_lock:
-        # スライドウィンドウから最新のタイムスタンプを1つ除去
-        timestamps = list(rate_limit_store.get(client_ip, []))
-        recent = [t for t in timestamps if now - t < 60]
-        if recent:
-            recent.pop()
-        rate_limit_store[client_ip] = recent
+        # 指定IDのエントリのみを除去（他のリクエストに影響しない）
+        entries = list(rate_limit_store.get(client_ip, []))
+        new_entries = []
+        removed = False
+        for e in entries:
+            if not removed and e[1] == request_id:
+                removed = True
+                continue
+            if now - e[0] < 60:
+                new_entries.append(e)
+        rate_limit_store[client_ip] = new_entries
 
-        # 日次カウントを1つ減算
-        daily = daily_count_store.get(client_ip, {"date": "", "count": 0})
-        if daily.get("date") == today and daily["count"] > 0:
-            daily["count"] -= 1
-            daily_count_store[client_ip] = daily
+        # 除去できた場合のみ日次カウントを減算
+        if removed:
+            daily = daily_count_store.get(client_ip, {"date": "", "count": 0})
+            if daily.get("date") == today and daily["count"] > 0:
+                daily["count"] -= 1
+                daily_count_store[client_ip] = daily
 
 
 # ─── アプリケーション初期化 ─────────────────────
@@ -127,9 +134,41 @@ def add_security_headers(response):
     """全レスポンスにセキュリティヘッダーを付与する。"""
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # CSP: self + Google Fonts + unsafe-inline（インラインstyle/onclick用）
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' blob: data:; "
+        "media-src 'self' blob:; "
+        "connect-src 'self'"
+    )
     return response
+
+
+# ─── Flaskエラーハンドラ（統一JSONレスポンス） ─────
+@app.errorhandler(413)
+def handle_request_too_large(_e):
+    """リクエストボディが MAX_CONTENT_LENGTH を超えた場合のJSONレスポンス。"""
+    return jsonify({
+        "ok": False,
+        "data": [],
+        "error_code": "REQUEST_TOO_LARGE",
+        "message": f"リクエストサイズが上限({MAX_REQUEST_BODY // (1024*1024)}MB)を超えています",
+    }), 413
+
+
+@app.errorhandler(400)
+def handle_bad_request(_e):
+    """Flaskが投げる400エラーのJSONレスポンス。"""
+    return jsonify({
+        "ok": False,
+        "data": [],
+        "error_code": "BAD_REQUEST",
+        "message": "不正なリクエストです",
+    }), 400
 
 
 # ─── レスポンスヘルパー ────────────────────────────
@@ -152,8 +191,13 @@ def index():
 
 @app.route("/api/config/proxy", methods=["GET"])
 def get_proxy_config():
-    """現在のプロキシ設定状態を返す"""
-    return jsonify(get_proxy_status())
+    """現在のプロキシ設定状態を返す（認証時はURL情報付き、未認証時はON/OFFのみ）"""
+    status = get_proxy_status()
+    auth_header = request.headers.get("X-Admin-Secret", "")
+    if not ADMIN_SECRET or auth_header != ADMIN_SECRET:
+        # 未認証: ON/OFF状態のみ（URL情報は非公開）
+        return jsonify({"enabled": status["enabled"]})
+    return jsonify(status)
 
 
 @app.route("/api/config/proxy", methods=["POST"])
@@ -164,9 +208,9 @@ def update_proxy_config():
     if not ADMIN_SECRET or auth_header != ADMIN_SECRET:
         return _error_response("UNAUTHORIZED", "管理APIへのアクセス権がありません", 403)
 
-    data = request.json
-    if not data or "enabled" not in data:
-        return jsonify({"ok": False, "message": "enabledフィールドが必要です"}), 400
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or "enabled" not in data:
+        return _error_response("INVALID_FORMAT", "enabledフィールドを含むJSONオブジェクトが必要です")
 
     # 型の厳密チェック: bool("false") == True を防止
     if not isinstance(data["enabled"], bool):
@@ -247,29 +291,33 @@ def analyze_endpoint():
 
     # ─── レート制限チェック＆予約（原子的） ──
     client_ip = request.remote_addr or "unknown"
-    limited, limit_message = try_consume_request(client_ip)
+    limited, limit_message, request_id = try_consume_request(client_ip)
     if limited:
+        logger.info("rate_limited ip=%s reason=%s", client_ip, limit_message)
         return _error_response("RATE_LIMITED", limit_message, 429)
 
     # ─── Vision API呼び出し ─────────────
     try:
         result = detect_content(image_data, mode)
 
-        # API失敗時はレート制限の予約を取り消す（成功時のみカウント消費）
-        if not result["ok"]:
-            release_request(client_ip)
+        # API失敗時は該当IDの予約のみ取り消す（成功時のみカウント消費）
+        if result["ok"]:
+            logger.info("api_success ip=%s mode=%s items=%d", client_ip, mode, len(result["data"]))
+        else:
+            release_request(client_ip, request_id)
+            logger.warning("api_failure ip=%s mode=%s error_code=%s", client_ip, mode, result["error_code"])
 
         status_code = 200 if result["ok"] else 502
         return jsonify(result), status_code
 
     except ValueError as e:
-        release_request(client_ip)
-        logger.warning("バリデーションエラー: %s", e)
+        release_request(client_ip, request_id)
+        logger.warning("validation_error ip=%s error=%s", client_ip, e)
         return _error_response("VALIDATION_ERROR", str(e))
 
     except Exception as e:
-        release_request(client_ip)
-        logger.error("サーバーエラー: %s", e, exc_info=True)
+        release_request(client_ip, request_id)
+        logger.error("server_error ip=%s error=%s", client_ip, e, exc_info=True)
         return _error_response("SERVER_ERROR", "内部サーバーエラーが発生しました", 500)
 
 

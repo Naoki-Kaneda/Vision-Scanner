@@ -144,7 +144,35 @@ class TestParsers:
         assert data[0]["label"] == "Hello"
         assert data[1]["label"] == "World"
         assert len(data[0]["bounds"]) == 4
+        # フォールバック: fullTextAnnotation がないので textAnnotations[0] から推定
         assert img_size == [100, 50]
+
+    def test_fullTextAnnotation優先で正確な画像サイズを取得する(self):
+        """fullTextAnnotation.pages[0] の width/height を優先して使用すること。"""
+        from vision_api import _parse_text_response
+        data, img_size = _parse_text_response({
+            "textAnnotations": [
+                {
+                    "description": "Hello",
+                    "boundingPoly": {"vertices": [
+                        {"x": 10, "y": 10}, {"x": 90, "y": 10},
+                        {"x": 90, "y": 40}, {"x": 10, "y": 40},
+                    ]},
+                },
+                {
+                    "description": "Hello",
+                    "boundingPoly": {"vertices": [
+                        {"x": 10, "y": 10}, {"x": 90, "y": 10},
+                        {"x": 90, "y": 40}, {"x": 10, "y": 40},
+                    ]},
+                },
+            ],
+            "fullTextAnnotation": {
+                "pages": [{"width": 640, "height": 480}],
+            },
+        })
+        # fullTextAnnotation の値が優先される（textAnnotations[0] の 90, 40 ではなく）
+        assert img_size == [640, 480]
 
     def test_テキストレスポンスが空文字アノテーションを除外する(self):
         """空文字・空白のdescriptionは除外されること。"""

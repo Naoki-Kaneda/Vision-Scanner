@@ -105,34 +105,7 @@ async function loadProxyConfig() {
     }
 }
 
-async function toggleProxy() {
-    // プロキシ切替は管理者認証が必要（ADMIN_SECRET未設定時は操作不可）
-    const secret = prompt('管理者シークレットを入力してください:');
-    if (!secret) return;
-
-    const newState = !currentProxyEnabled;
-    try {
-        const res = await fetch('/api/config/proxy', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Admin-Secret': secret,
-            },
-            body: JSON.stringify({ enabled: newState }),
-        });
-        if (res.ok) {
-            const data = await res.json();
-            updateProxyButton(data.status.enabled);
-        } else {
-            const err = await res.json().catch(() => null);
-            alert(err?.message || 'プロキシ切り替えに失敗しました');
-        }
-    } catch (err) {
-        console.error('プロキシ切り替えエラー:', err);
-        alert('通信エラーが発生しました');
-    }
-}
-
+/** プロキシ状態の表示を更新する（表示のみ、切替はCLI操作）。 */
 function updateProxyButton(isEnabled) {
     currentProxyEnabled = isEnabled;
     if (!btnProxy) return;
@@ -140,11 +113,9 @@ function updateProxyButton(isEnabled) {
     if (isEnabled) {
         btnProxy.textContent = 'Proxy: ON';
         btnProxy.className = 'proxy-badge active';
-        btnProxy.title = 'クリックして無効化';
     } else {
         btnProxy.textContent = 'Proxy: OFF';
         btnProxy.className = 'proxy-badge inactive';
-        btnProxy.title = 'クリックして有効化';
     }
 }
 
@@ -519,7 +490,15 @@ async function captureAndAnalyze() {
             body: JSON.stringify({ image: imageData, mode: currentMode }),
         });
 
-        const result = await response.json();
+        // JSONパース失敗に備えた安全なパース（413等でHTML応答の場合）
+        let result;
+        try {
+            result = await response.json();
+        } catch {
+            statusText.textContent = `⚠ サーバーエラー (${response.status})`;
+            scheduleRetry();
+            return;
+        }
 
         // サーバー側レート制限: 再試行スケジュールで連射を防止
         if (response.status === 429) {
