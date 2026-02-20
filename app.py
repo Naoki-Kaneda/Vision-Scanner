@@ -48,7 +48,7 @@ else:
 
 def is_rate_limited(client_ip):
     """
-    IP単位でレート制限をチェックする。
+    IP単位でレート制限をチェックする（判定のみ、カウントは加算しない）。
 
     Returns:
         tuple: (制限中か, エラーメッセージ)
@@ -56,7 +56,6 @@ def is_rate_limited(client_ip):
     now = time.time()
     today = time.strftime("%Y-%m-%d")
 
-    # 日次制限チェック
     daily = daily_count_store.get(client_ip, {"date": "", "count": 0})
     if daily.get("date") != today:
         daily = {"date": today, "count": 0}
@@ -64,19 +63,31 @@ def is_rate_limited(client_ip):
     if daily["count"] >= RATE_LIMIT_DAILY:
         return True, f"1日あたりのAPI上限({RATE_LIMIT_DAILY}回)に達しました"
 
-    # 1分あたりの制限チェック（スライドウィンドウ）
     timestamps = list(rate_limit_store.get(client_ip, []))
-    rate_limit_store[client_ip] = [t for t in timestamps if now - t < 60]
-
-    if len(rate_limit_store[client_ip]) >= RATE_LIMIT_PER_MINUTE:
+    recent = [t for t in timestamps if now - t < 60]
+    if len(recent) >= RATE_LIMIT_PER_MINUTE:
         return True, f"リクエスト頻度が高すぎます（上限: {RATE_LIMIT_PER_MINUTE}回/分）"
 
-    # チェック通過後にのみカウント加算（クライアント側と方針統一）
-    rate_limit_store[client_ip].append(now)
+    return False, ""
+
+
+def record_request(client_ip):
+    """
+    API成功後に呼び出す。判定と加算を分離することで「成功時のみカウント」方針を実現。
+    """
+    now = time.time()
+    today = time.strftime("%Y-%m-%d")
+
+    # 分却ウィンドウへ追加
+    timestamps = list(rate_limit_store.get(client_ip, []))
+    rate_limit_store[client_ip] = [t for t in timestamps if now - t < 60] + [now]
+
+    # 日次カウント加算
+    daily = daily_count_store.get(client_ip, {"date": "", "count": 0})
+    if daily.get("date") != today:
+        daily = {"date": today, "count": 0}
     daily["count"] += 1
     daily_count_store[client_ip] = daily
-
-    return False, ""
 
 
 # ─── アプリケーション初期化 ─────────────────────
@@ -174,6 +185,11 @@ def analyze_endpoint():
     # Vision API呼び出し
     try:
         result = detect_content(image_data, mode)
+
+        # 成功時のみサーバー側カウント加算（判定と加算を分離）
+        if result["ok"]:
+            record_request(client_ip)
+
         status_code = 200 if result["ok"] else 502
         return jsonify(result), status_code
 

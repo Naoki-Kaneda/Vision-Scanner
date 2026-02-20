@@ -5,7 +5,7 @@ Vision AI Scanner - APIエンドポイントのテスト。
 
 import base64
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from app import app
 
 

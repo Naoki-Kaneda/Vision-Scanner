@@ -327,10 +327,32 @@ async function captureAndAnalyze() {
                 .filter(isValidResult)
                 .forEach(addResultItem);
         } else if (!result.ok) {
+            // UIにエラーを表示し、一定時間スキャンを一時停止
+            const errorMsg = result.message || `サーバーエラー (${result.error_code})`;
+            statusText.innerText = `⚠ ${errorMsg}`;
             console.error(`APIエラー [${result.error_code}]:`, result.message);
+            // 5秒間スキャン中断（連続リトライ防止）
+            isScanning = false;
+            setTimeout(() => {
+                if (!isScanning) {
+                    isScanning = true;
+                    statusText.innerText = '静止を待っています...';
+                    requestAnimationFrame(scanLoop);
+                }
+            }, 5000);
         }
     } catch (err) {
+        // 通信失敗もUIに表示
+        statusText.innerText = '⚠ 通信エラー。再試行します...';
         console.error('通信エラー:', err);
+        isScanning = false;
+        setTimeout(() => {
+            if (!isScanning) {
+                isScanning = true;
+                statusText.innerText = '静止を待っています...';
+                requestAnimationFrame(scanLoop);
+            }
+        }, 5000);
     }
 }
 
