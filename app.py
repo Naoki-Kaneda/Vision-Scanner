@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
 MAX_IMAGE_SIZE = 5 * 1024 * 1024          # 5MB（Base64デコード後）
 MAX_REQUEST_BODY = 10 * 1024 * 1024       # 10MB（Base64 + JSONオーバーヘッド）
+ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")  # 管理API認証用シークレット
 
 # ─── サーバー側レート制限（IP単位） ────────────────
 RATE_LIMIT_PER_MINUTE = 20   # 1分あたりの最大リクエスト数
@@ -47,9 +48,13 @@ daily_count_store = TTLCache(maxsize=CACHE_MAX_SIZE, ttl=RATE_LIMIT_DAILY_TTL)
 rate_limit_lock = Lock()
 
 
-def is_rate_limited(client_ip):
+def try_consume_request(client_ip):
     """
-    IP単位でレート制限をチェックする（判定のみ、カウントは加算しない）。
+    レート制限のチェックと予約を原子的に行う（TOCTOU競合防止）。
+
+    制限内ならカウントを加算して (False, "") を返す。
+    制限超過なら加算せず (True, エラーメッセージ) を返す。
+    API呼び出し失敗時は release_request() で予約を取り消すこと。
 
     Returns:
         tuple: (制限中か, エラーメッセージ)
@@ -58,6 +63,7 @@ def is_rate_limited(client_ip):
     today = time.strftime("%Y-%m-%d")
 
     with rate_limit_lock:
+        # 日次制限チェック
         daily = daily_count_store.get(client_ip, {"date": "", "count": 0})
         if daily.get("date") != today:
             daily = {"date": today, "count": 0}
@@ -65,32 +71,41 @@ def is_rate_limited(client_ip):
         if daily["count"] >= RATE_LIMIT_DAILY:
             return True, f"1日あたりのAPI上限({RATE_LIMIT_DAILY}回)に達しました"
 
+        # 分間制限チェック
         timestamps = list(rate_limit_store.get(client_ip, []))
         recent = [t for t in timestamps if now - t < 60]
         if len(recent) >= RATE_LIMIT_PER_MINUTE:
             return True, f"リクエスト頻度が高すぎます（上限: {RATE_LIMIT_PER_MINUTE}回/分）"
 
+        # チェック通過 → カウントを原子的に加算（予約）
+        rate_limit_store[client_ip] = recent + [now]
+        daily["count"] += 1
+        daily_count_store[client_ip] = daily
+
     return False, ""
 
 
-def record_request(client_ip):
+def release_request(client_ip):
     """
-    API成功後に呼び出す。判定と加算を分離することで「成功時のみカウント」方針を実現。
+    API呼び出し失敗時に予約を取り消す。
+    try_consume_request で加算したカウントを1つ戻す。
     """
     now = time.time()
     today = time.strftime("%Y-%m-%d")
 
     with rate_limit_lock:
-        # スライドウィンドウへ追加
+        # スライドウィンドウから最新のタイムスタンプを1つ除去
         timestamps = list(rate_limit_store.get(client_ip, []))
-        rate_limit_store[client_ip] = [t for t in timestamps if now - t < 60] + [now]
+        recent = [t for t in timestamps if now - t < 60]
+        if recent:
+            recent.pop()
+        rate_limit_store[client_ip] = recent
 
-        # 日次カウント加算
+        # 日次カウントを1つ減算
         daily = daily_count_store.get(client_ip, {"date": "", "count": 0})
-        if daily.get("date") != today:
-            daily = {"date": today, "count": 0}
-        daily["count"] += 1
-        daily_count_store[client_ip] = daily
+        if daily.get("date") == today and daily["count"] > 0:
+            daily["count"] -= 1
+            daily_count_store[client_ip] = daily
 
 
 # ─── アプリケーション初期化 ─────────────────────
@@ -143,12 +158,21 @@ def get_proxy_config():
 
 @app.route("/api/config/proxy", methods=["POST"])
 def update_proxy_config():
-    """プロキシ設定を更新する"""
+    """プロキシ設定を更新する（認証必須）"""
+    # シークレットキーによる認証
+    auth_header = request.headers.get("X-Admin-Secret", "")
+    if not ADMIN_SECRET or auth_header != ADMIN_SECRET:
+        return _error_response("UNAUTHORIZED", "管理APIへのアクセス権がありません", 403)
+
     data = request.json
     if not data or "enabled" not in data:
         return jsonify({"ok": False, "message": "enabledフィールドが必要です"}), 400
 
-    new_status = set_proxy_enabled(bool(data["enabled"]))
+    # 型の厳密チェック: bool("false") == True を防止
+    if not isinstance(data["enabled"], bool):
+        return _error_response("INVALID_TYPE", "enabledフィールドはboolean型(true/false)である必要があります")
+
+    new_status = set_proxy_enabled(data["enabled"])
     return jsonify({"ok": True, "status": new_status})
 
 
@@ -221,9 +245,9 @@ def analyze_endpoint():
     if validation_error:
         return validation_error
 
-    # ─── レート制限チェック ──────────────
+    # ─── レート制限チェック＆予約（原子的） ──
     client_ip = request.remote_addr or "unknown"
-    limited, limit_message = is_rate_limited(client_ip)
+    limited, limit_message = try_consume_request(client_ip)
     if limited:
         return _error_response("RATE_LIMITED", limit_message, 429)
 
@@ -231,18 +255,20 @@ def analyze_endpoint():
     try:
         result = detect_content(image_data, mode)
 
-        # 成功時のみサーバー側カウント加算（判定と加算を分離）
-        if result["ok"]:
-            record_request(client_ip)
+        # API失敗時はレート制限の予約を取り消す（成功時のみカウント消費）
+        if not result["ok"]:
+            release_request(client_ip)
 
         status_code = 200 if result["ok"] else 502
         return jsonify(result), status_code
 
     except ValueError as e:
+        release_request(client_ip)
         logger.warning("バリデーションエラー: %s", e)
         return _error_response("VALIDATION_ERROR", str(e))
 
     except Exception as e:
+        release_request(client_ip)
         logger.error("サーバーエラー: %s", e, exc_info=True)
         return _error_response("SERVER_ERROR", "内部サーバーエラーが発生しました", 500)
 

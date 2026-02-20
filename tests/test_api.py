@@ -1,6 +1,6 @@
 """
 Vision AI Scanner - APIエンドポイントのテスト。
-正常系（OCR/物体検出）、不正入力、API失敗時の4系統をカバー。
+正常系（OCR/物体検出）、不正入力、API失敗時、セキュリティの5系統をカバー。
 """
 
 import base64
@@ -201,3 +201,102 @@ class TestApiFailure:
         data = response.get_json()
         assert data["ok"] is False
         assert data["error_code"] == "SERVER_ERROR"
+
+
+# ─── セキュリティテスト ──────────────────────────
+class TestProxySecurity:
+    """プロキシAPI認証・情報漏えい防止のテスト。"""
+
+    def test_プロキシGETにconfigured_urlが含まれない(self, client):
+        """GETレスポンスに configured_url が存在しないこと（情報漏えい防止）。"""
+        response = client.get("/api/config/proxy")
+        assert response.status_code == 200
+        data = response.get_json()
+        assert "configured_url" not in data
+
+    def test_認証なしのプロキシPOSTは403を返す(self, client):
+        """X-Admin-Secretヘッダーなしの場合は403を返すこと。"""
+        response = client.post("/api/config/proxy", json={"enabled": True})
+        assert response.status_code == 403
+        data = response.get_json()
+        assert data["error_code"] == "UNAUTHORIZED"
+
+    @patch("app.ADMIN_SECRET", "test-secret-123")
+    def test_不正なシークレットでは403を返す(self, client):
+        """不正なシークレットの場合は403を返すこと。"""
+        response = client.post(
+            "/api/config/proxy",
+            json={"enabled": True},
+            headers={"X-Admin-Secret": "wrong-secret"},
+        )
+        assert response.status_code == 403
+
+    @patch("app.ADMIN_SECRET", "test-secret-123")
+    def test_正しいシークレットでプロキシを更新できる(self, client):
+        """正しいシークレットの場合はプロキシ設定を更新できること。"""
+        response = client.post(
+            "/api/config/proxy",
+            json={"enabled": False},
+            headers={"X-Admin-Secret": "test-secret-123"},
+        )
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["ok"] is True
+
+    @patch("app.ADMIN_SECRET", "test-secret-123")
+    def test_enabled文字列falseは型エラーを返す(self, client):
+        """enabled が文字列 "false" の場合は400を返すこと（bool("false")==True バグの防止）。"""
+        response = client.post(
+            "/api/config/proxy",
+            json={"enabled": "false"},
+            headers={"X-Admin-Secret": "test-secret-123"},
+        )
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["error_code"] == "INVALID_TYPE"
+
+
+class TestRateLimitAtomicity:
+    """レート制限のアトミック性テスト。"""
+
+    @patch("app.detect_content")
+    def test_API失敗時にレート制限カウントが戻る(self, mock_detect, client):
+        """API失敗時は release_request により予約が取り消されること。"""
+        from app import daily_count_store
+
+        mock_detect.return_value = {
+            "ok": False,
+            "data": [],
+            "image_size": None,
+            "error_code": "API_500",
+            "message": "Vision APIエラー",
+        }
+
+        # API失敗リクエストを送信
+        response = client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "text",
+        })
+        assert response.status_code == 502
+
+        # 日次カウントが0に戻っていること（予約→解放）
+        ip = "127.0.0.1"
+        daily = daily_count_store.get(ip, {"count": 0})
+        assert daily["count"] == 0
+
+    @patch("app.detect_content")
+    def test_例外発生時もレート制限カウントが戻る(self, mock_detect, client):
+        """detect_content例外時もカウントが戻ること。"""
+        from app import daily_count_store
+
+        mock_detect.side_effect = RuntimeError("テスト例外")
+
+        response = client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "text",
+        })
+        assert response.status_code == 500
+
+        ip = "127.0.0.1"
+        daily = daily_count_store.get(ip, {"count": 0})
+        assert daily["count"] == 0

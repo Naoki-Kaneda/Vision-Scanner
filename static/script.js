@@ -106,18 +106,26 @@ async function loadProxyConfig() {
 }
 
 async function toggleProxy() {
+    // プロキシ切替は管理者認証が必要（ADMIN_SECRET未設定時は操作不可）
+    const secret = prompt('管理者シークレットを入力してください:');
+    if (!secret) return;
+
     const newState = !currentProxyEnabled;
     try {
         const res = await fetch('/api/config/proxy', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Admin-Secret': secret,
+            },
             body: JSON.stringify({ enabled: newState }),
         });
         if (res.ok) {
             const data = await res.json();
             updateProxyButton(data.status.enabled);
         } else {
-            alert('プロキシ切り替えに失敗しました');
+            const err = await res.json().catch(() => null);
+            alert(err?.message || 'プロキシ切り替えに失敗しました');
         }
     } catch (err) {
         console.error('プロキシ切り替えエラー:', err);
@@ -280,6 +288,13 @@ function toggleScanning() {
 
 /** スキャンを開始し、安定化検出ループを起動する。 */
 function startScanning() {
+    // エラー再試行タイマーが残っていればクリア（2重ループ防止）
+    isPausedByError = false;
+    if (retryTimerId) {
+        clearTimeout(retryTimerId);
+        retryTimerId = null;
+    }
+
     isScanning = true;
     btnScan.innerHTML = '<span class="icon">■</span> Stop';
     btnScan.classList.add('scanning');

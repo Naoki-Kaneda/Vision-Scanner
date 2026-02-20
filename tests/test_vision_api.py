@@ -191,3 +191,62 @@ class TestParsers:
         assert "Quasar" in result[0]["label"]
         assert "（" not in result[0]["label"]
         assert len(result[0]["bounds"]) == 4
+
+
+# ─── プロキシURLマスクテスト ────────────────────
+class TestMaskProxyUrl:
+    """_mask_proxy_url のユニットテスト。"""
+
+    def test_認証情報付きURLがマスクされる(self):
+        """user:pass@host 形式のURLで認証部分がマスクされること。"""
+        from vision_api import _mask_proxy_url
+        result = _mask_proxy_url("http://user:pass@proxy.example.com:8080")
+        assert "user" not in result
+        assert "pass" not in result
+        assert "***:***@proxy.example.com:8080" in result
+        assert result.startswith("http://")
+
+    def test_認証情報なしURLはそのまま返す(self):
+        """認証情報がないURLはマスクせずそのまま返すこと。"""
+        from vision_api import _mask_proxy_url
+        result = _mask_proxy_url("http://proxy.example.com:8080")
+        assert result == "http://proxy.example.com:8080"
+
+    def test_空文字はそのまま返す(self):
+        """空文字はそのまま返すこと。"""
+        from vision_api import _mask_proxy_url
+        assert _mask_proxy_url("") == ""
+
+    def test_Noneはそのまま返す(self):
+        """Noneはそのまま返すこと。"""
+        from vision_api import _mask_proxy_url
+        assert _mask_proxy_url(None) is None
+
+
+# ─── 画像安全チェックテスト ────────────────────
+class TestImageSafetyCheck:
+    """preprocess_image の安全チェックがバイパスされないことのテスト。"""
+
+    @patch("vision_api.session.post")
+    @patch("vision_api.preprocess_image")
+    def test_ValueError時はdetect_contentがValueErrorを伝播する(self, mock_preprocess, mock_post):
+        """preprocess_imageがValueErrorを投げた場合、detect_contentも伝播すること。"""
+        mock_preprocess.side_effect = ValueError("画像サイズが大きすぎます")
+        from vision_api import detect_content
+        with pytest.raises(ValueError, match="画像サイズが大きすぎます"):
+            detect_content(make_b64(), mode="text")
+        # APIは呼ばれないこと
+        mock_post.assert_not_called()
+
+    @patch("vision_api.session.post")
+    @patch("vision_api.preprocess_image")
+    def test_非ValueErrorの前処理エラーはスキップしてAPI呼び出しを続行する(self, mock_preprocess, mock_post):
+        """前処理でValueError以外のエラーが出た場合はスキップしてAPI呼び出しを続行すること。"""
+        mock_preprocess.side_effect = OSError("一時的なI/Oエラー")
+        mock_post.return_value = make_mock_response(status_code=200, json_data={
+            "responses": [{"textAnnotations": []}]
+        })
+        from vision_api import detect_content
+        result = detect_content(make_b64(), mode="text")
+        assert result["ok"] is True
+        mock_post.assert_called_once()

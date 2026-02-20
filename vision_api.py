@@ -87,12 +87,22 @@ if session.proxies:
 
 
 # ─── プロキシ設定API ─────────────────────────────
+def _mask_proxy_url(url):
+    """プロキシURLの認証情報をマスクする（例: http://user:pass@host → http://***:***@host）"""
+    if not url or "@" not in url:
+        return url
+    scheme_end = url.find("://")
+    if scheme_end == -1:
+        return "***"
+    at_pos = url.index("@")
+    return url[:scheme_end + 3] + "***:***" + url[at_pos:]
+
+
 def get_proxy_status():
-    """現在のプロキシ設定状態を返す"""
+    """現在のプロキシ設定状態を返す（認証情報はマスク）"""
     return {
         "enabled": not NO_PROXY_MODE and bool(_RAW_PROXY_URL),
-        "url": _RAW_PROXY_URL if not NO_PROXY_MODE else "",
-        "configured_url": _RAW_PROXY_URL
+        "url": _mask_proxy_url(_RAW_PROXY_URL) if not NO_PROXY_MODE else "",
     }
 
 
@@ -183,8 +193,11 @@ def detect_content(image_b64, mode="text"):
     if mode == "text":
         try:
             image_b64 = preprocess_image(image_b64)
+        except ValueError:
+            # 安全チェック違反（画像サイズ超過等）はスキップ不可 → 呼び出し元へ伝播
+            raise
         except Exception as e:
-            logger.warning("前処理をスキップ: %s", e)
+            logger.warning("前処理をスキップ（画像強調のみ省略）: %s", e)
 
     # APIリクエストペイロード
     payload = {
