@@ -7,7 +7,7 @@ const API_DAILY_LIMIT = 100;          // 1日のAPI呼び出し上限
 const API_WARNING_RATIO = 0.8;       // API上限の警告表示閾値（80%で黄色）
 const TARGET_BOX_RATIO = 0.6;        // ターゲットボックスの映像比率（60%）
 const STABILITY_THRESHOLD = 30;      // 安定判定フレーム数（約1秒@30fps）
-const MOTION_THRESHOLD = 15;         // フレーム間差分の閾値
+const MOTION_THRESHOLD = 30;         // フレーム間差分の閾値（カメラノイズ耐性を確保）
 const MOTION_CANVAS_WIDTH = 64;      // モーション検出用キャンバス幅
 const MOTION_CANVAS_HEIGHT = 48;     // モーション検出用キャンバス高さ
 const CAMERA_WIDTH = 1280;           // カメラ解像度（幅）
@@ -45,7 +45,7 @@ let stabilityCounter = 0;
 const motionCanvas = document.createElement('canvas');
 motionCanvas.width = MOTION_CANVAS_WIDTH;
 motionCanvas.height = MOTION_CANVAS_HEIGHT;
-const motionCtx = motionCanvas.getContext('2d');
+const motionCtx = motionCanvas.getContext('2d', { willReadFrequently: true });
 
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -258,14 +258,31 @@ function updateSourceButtons() {
 // スキャン・安定化検出
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/** スキャンの開始/停止を切り替える。 */
+/** スキャンの開始/停止を切り替える（チャタリング防止付き）。 */
+let lastToggleTime = 0;
 function toggleScanning() {
+    const now = Date.now();
+    if (now - lastToggleTime < 400) {
+        console.log('[toggleScanning] チャタリング防止: 無視');
+        return;
+    }
+    lastToggleTime = now;
     console.log('[toggleScanning] クリック検出, isScanning:', isScanning);
     isScanning ? stopScanning() : startScanning();
 }
 
 /** スキャンを開始し、安定化検出ループを起動する。 */
 function startScanning() {
+    console.log('[startScanning] DOM状態:', {
+        videoContainer: !!videoContainer,
+        statusDot: !!statusDot,
+        statusText: !!statusText,
+        stabilityBarContainer: !!stabilityBarContainer,
+        stabilityBarFill: !!stabilityBarFill,
+        videoWidth: video ? video.videoWidth : 'null',
+        videoSrc: video ? !!video.srcObject : 'null',
+    });
+
     // エラー再試行タイマーが残っていればクリア（2重ループ防止）
     isPausedByError = false;
     if (retryTimerId) {
@@ -284,6 +301,8 @@ function startScanning() {
     if (stabilityBarContainer) stabilityBarContainer.classList.remove('hidden');
     if (stabilityBarFill) stabilityBarFill.style.width = '0%';
 
+    scanFrameCount = 0;
+    console.log('[startScanning] ボタン変更完了:', btnScan.className, '| テキスト:', btnScan.textContent.trim());
     requestAnimationFrame(scanLoop);
 }
 
@@ -307,8 +326,13 @@ function stopScanning() {
 }
 
 /** requestAnimationFrameベースのスキャンループ。 */
+let scanFrameCount = 0;
 function scanLoop() {
     if (!isScanning) return;
+    scanFrameCount++;
+    if (scanFrameCount % 60 === 1) {
+        console.log('[scanLoop] フレーム:', scanFrameCount, '安定度:', stabilityCounter, 'videoWidth:', video.videoWidth);
+    }
     checkStabilityAndCapture();
     requestAnimationFrame(scanLoop);
 }
