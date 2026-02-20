@@ -565,3 +565,35 @@ class TestHealthChecks:
         assert data["status"] == "ok"
         assert data["checks"]["rate_limiter_ok"] is True
         assert "warnings" not in data
+
+
+# ─── ADMIN_SECRET 強度チェック テスト ──────────────────
+class TestAdminSecretCheck:
+    """起動時のADMIN_SECRET強度検証ロジックのテスト。"""
+
+    def test_未設定は未設定警告のみ(self):
+        """空文字の場合は「未設定」の警告1件のみ。"""
+        from app import _check_admin_secret
+        warnings = _check_admin_secret("")
+        assert len(warnings) == 1
+        assert "未設定" in warnings[0]
+
+    def test_短すぎる値は長さ警告(self):
+        """16文字未満は長さ警告が出ること。"""
+        from app import _check_admin_secret
+        warnings = _check_admin_secret("Abc123!@")  # 8文字・文字種は十分
+        assert any("短すぎ" in w for w in warnings)
+
+    def test_低エントロピー値はエントロピー警告(self):
+        """文字種が2種以下の場合はエントロピー警告が出ること。"""
+        from app import _check_admin_secret
+        warnings = _check_admin_secret("abcdefghijklmnopqrst")  # 20文字・小文字のみ
+        assert any("エントロピー" in w for w in warnings)
+
+    def test_高エントロピー値は警告なし(self):
+        """十分な長さ・文字種のランダム値は警告が出ないこと。"""
+        import secrets
+        from app import _check_admin_secret
+        strong_secret = secrets.token_urlsafe(32)
+        warnings = _check_admin_secret(strong_secret)
+        assert len(warnings) == 0
