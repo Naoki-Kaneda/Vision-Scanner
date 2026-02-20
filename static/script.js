@@ -109,6 +109,7 @@ function updateProxyButton(isEnabled) {
 
 /** スキャンボタンを無効化する（API上限到達時）。 */
 function disableScanButton(message) {
+    if (!btnScan) return;
     btnScan.disabled = true;
     btnScan.innerHTML = `<span class="icon">⚠</span> ${message}`;
     btnScan.style.opacity = '0.5';
@@ -132,7 +133,7 @@ function updateApiCounter() {
     // 既定ではボタンロックを行わない（サーバー側のレート制限を信頼）
     if (ENFORCE_CLIENT_DAILY_LIMIT && apiCallCount >= API_DAILY_LIMIT) {
         disableScanButton('API上限（本日分）');
-    } else {
+    } else if (btnScan) {
         btnScan.disabled = false;
         btnScan.style.opacity = '';
         btnScan.style.cursor = '';
@@ -248,8 +249,8 @@ function switchSource(source) {
 
 /** Camera / File ボタンのアクティブ状態を更新する。 */
 function updateSourceButtons() {
-    btnCamera.classList.toggle('active', currentSource === 'camera');
-    btnFile.classList.toggle('active', currentSource === 'file');
+    if (btnCamera) btnCamera.classList.toggle('active', currentSource === 'camera');
+    if (btnFile) btnFile.classList.toggle('active', currentSource === 'file');
 }
 
 
@@ -381,6 +382,7 @@ function checkStabilityAndCapture() {
 
 /** オーバーレイCanvasをクリアする。 */
 function clearOverlay() {
+    if (!overlayCanvas) return;
     overlayCanvas.width = overlayCanvas.width;
 }
 
@@ -646,8 +648,8 @@ function toggleMirror() {
 /** テキスト / 物体検出モードを切り替える。 */
 function setMode(mode) {
     currentMode = mode;
-    modeText.classList.toggle('active', mode === 'text');
-    modeObject.classList.toggle('active', mode === 'object');
+    if (modeText) modeText.classList.toggle('active', mode === 'text');
+    if (modeObject) modeObject.classList.toggle('active', mode === 'object');
     clearResults();
     clearOverlay();
 }
@@ -700,15 +702,9 @@ function init() {
     ctx = canvas ? canvas.getContext('2d') : null;
     overlayCtx = overlayCanvas ? overlayCanvas.getContext('2d') : null;
 
-    const missing = [];
-    if (!video) missing.push('video-feed');
-    if (!canvas) missing.push('capture-canvas');
-    if (!overlayCanvas) missing.push('overlay-canvas');
-    if (!btnScan) missing.push('btn-scan');
-    if (!fileInput) missing.push('file-input');
-    if (!ctx || !overlayCtx) missing.push('canvas-context');
-    if (missing.length) {
-        console.error('UI initialization failed. Missing elements:', missing.join(', '));
+    // ─── 必須要素チェック（video / btnScan のみ致命的） ──
+    if (!video || !btnScan) {
+        console.error('[init] 致命的: video または btnScan が見つかりません。');
         return;
     }
 
@@ -720,7 +716,7 @@ function init() {
     if (btnMirror) btnMirror.addEventListener('click', toggleMirror);
     if (modeText) modeText.addEventListener('click', () => setMode('text'));
     if (modeObject) modeObject.addEventListener('click', () => setMode('object'));
-    if (btnScan) btnScan.addEventListener('click', toggleScanning);
+    btnScan.addEventListener('click', toggleScanning);
     if (btnClear) btnClear.addEventListener('click', clearResults);
 
     setupCamera();
@@ -729,11 +725,9 @@ function init() {
     loadProxyConfig();
 
     console.log('[init] 完了:', {
-        btnScan: !!btnScan,
-        btnScanDisabled: btnScan?.disabled,
-        video: !!video,
-        camera: !!btnCamera,
-        file: !!btnFile,
+        btnScanDisabled: btnScan.disabled,
+        apiCallCount: apiCallCount,
+        enforceLimit: ENFORCE_CLIENT_DAILY_LIMIT,
     });
 }
 
