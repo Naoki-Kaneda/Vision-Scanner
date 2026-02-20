@@ -19,6 +19,7 @@ from PIL import Image, ImageEnhance
 from translations import OBJECT_TRANSLATIONS
 
 # ─── 設定 ──────────────────────────────────────
+# 単体テスト時にもenvが確実に読まれるよう、各モジュールでも呼ぶ（冪等）
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -164,13 +165,14 @@ def preprocess_image(image_base64):
 
 
 # ─── API呼び出し ──────────────────────────────────
-def detect_content(image_b64, mode="text"):
+def detect_content(image_b64, mode="text", request_id=""):
     """
     Google Cloud Vision APIで画像解析を行う。
 
     Args:
         image_b64: Base64エンコードされた画像文字列。
         mode: 'text'（テキスト抽出）または 'object'（物体検出）。
+        request_id: リクエスト相関ID（ログ追跡用、省略可）。
 
     Returns:
         dict: {
@@ -218,7 +220,7 @@ def detect_content(image_b64, mode="text"):
         response = session.post(api_url, json=payload, timeout=API_TIMEOUT_SECONDS)
 
         if response.status_code != 200:
-            logger.error("APIエラー (ステータス %d): %.500s", response.status_code, response.text)
+            logger.error("[%s] APIエラー (ステータス %d): %.500s", request_id, response.status_code, response.text)
             return {
                 "ok": False,
                 "data": [],
@@ -259,13 +261,13 @@ def detect_content(image_b64, mode="text"):
         return {"ok": True, "data": data, "image_size": image_size, "error_code": None, "message": None}
 
     except requests.exceptions.Timeout:
-        logger.error("Vision API タイムアウト")
+        logger.error("[%s] Vision API タイムアウト", request_id)
         return {"ok": False, "data": [], "image_size": None, "error_code": "TIMEOUT", "message": "APIリクエストがタイムアウトしました"}
     except requests.exceptions.ConnectionError as e:
-        logger.error("Vision API 接続エラー: %s", e)
+        logger.error("[%s] Vision API 接続エラー: %s", request_id, e)
         return {"ok": False, "data": [], "image_size": None, "error_code": "CONNECTION_ERROR", "message": "API接続に失敗しました"}
     except requests.exceptions.RequestException as e:
-        logger.error("Vision API通信エラー: %s", e)
+        logger.error("[%s] Vision API通信エラー: %s", request_id, e)
         return {"ok": False, "data": [], "image_size": None, "error_code": "REQUEST_ERROR", "message": str(e)}
 
 

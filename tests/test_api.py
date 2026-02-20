@@ -531,9 +531,9 @@ class TestHealthChecks:
         assert data["status"] == "ok"
         assert data["checks"]["api_key_configured"] is True
 
-    @patch.dict(os.environ, {"VISION_API_KEY": ""})
+    @patch("app.API_KEY", "")
     def test_readyzがAPIキー未設定で503を返す(self, client):
-        """VISION_API_KEYが空なら /readyz は503を返すこと。"""
+        """API_KEYが空なら /readyz は503を返すこと。"""
         response = client.get("/readyz")
         assert response.status_code == 503
         data = response.get_json()

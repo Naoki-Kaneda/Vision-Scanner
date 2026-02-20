@@ -11,6 +11,7 @@ from threading import Lock
 
 from dotenv import load_dotenv
 
+# 単体テスト時にもenvが確実に読まれるよう、各モジュールでも呼ぶ（冪等）
 load_dotenv()
 
 logger = logging.getLogger(__name__)

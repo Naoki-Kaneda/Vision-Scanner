@@ -12,7 +12,7 @@ import secrets
 from flask import Flask, render_template, request, jsonify, g
 from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
-from vision_api import detect_content, get_proxy_status, set_proxy_enabled, VALID_MODES
+from vision_api import detect_content, get_proxy_status, set_proxy_enabled, VALID_MODES, API_KEY
 from rate_limiter import try_consume_request, release_request, RATE_LIMIT_DAILY
 
 # ─── 設定 ──────────────────────────────────────
@@ -204,7 +204,7 @@ def healthz():
 def readyz():
     """Readiness: リクエスト処理可能か（APIキー等の設定チェック）"""
     checks = {
-        "api_key_configured": bool(os.getenv("VISION_API_KEY")),
+        "api_key_configured": bool(API_KEY),
     }
     all_ok = all(checks.values())
     return jsonify({"status": "ok" if all_ok else "not_ready", "checks": checks}), 200 if all_ok else 503
@@ -330,7 +330,7 @@ def analyze_endpoint():
 
     # ─── Vision API呼び出し ─────────────
     try:
-        result = detect_content(image_data, mode)
+        result = detect_content(image_data, mode, request_id=g.request_id)
 
         if result["ok"]:
             _log("info", "api_success", ip=client_ip, mode=mode, items=len(result["data"]))
