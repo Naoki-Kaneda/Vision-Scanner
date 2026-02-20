@@ -169,6 +169,16 @@ class TestInvalidInput:
         assert response.status_code == 400
         assert response.get_json()["error_code"] == "MISSING_IMAGE"
 
+    def test_JSONが配列のリクエストを拒否する(self, client):
+        """JSONボディが配列（dict以外）の場合は400を返すこと。"""
+        response = client.post(
+            "/api/analyze",
+            data="[1, 2, 3]",
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+        assert response.get_json()["error_code"] == "INVALID_FORMAT"
+
 
 # ─── API失敗時テスト ──────────────────────────────
 class TestApiFailure:

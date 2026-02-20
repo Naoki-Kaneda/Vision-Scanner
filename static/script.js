@@ -360,7 +360,16 @@ function addResultItem(text) {
 
     const div = document.createElement('div');
     div.className = 'result-item';
-    div.innerHTML = `<span class="timestamp">[${timeStr}]</span> ${cleanText}`;
+
+    // XSS対策: innerHTML ではなく DOM操作でテキストを挿入する
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'timestamp';
+    timeSpan.textContent = `[${timeStr}]`;
+
+    const textNode = document.createTextNode(` ${cleanText}`);
+
+    div.appendChild(timeSpan);
+    div.appendChild(textNode);
     resultList.prepend(div);
 }
 

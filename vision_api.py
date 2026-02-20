@@ -147,10 +147,24 @@ def detect_content(image_content_base64, mode="text"):
         if not responses:
             return {"ok": True, "data": [], "error_code": None, "message": None}
 
+        # HTTP 200 でも responses[0] 内部にエラーが入る場合がある（Vision API の仕様）
+        response_item = responses[0]
+        partial_error = response_item.get("error")
+        if partial_error:
+            code = partial_error.get("code", "UNKNOWN")
+            msg = partial_error.get("message", "Vision API 内部エラー")
+            logger.error("Vision API 部分エラー (code=%s): %s", code, msg)
+            return {
+                "ok": False,
+                "data": [],
+                "error_code": f"VISION_{code}",
+                "message": msg,
+            }
+
         if mode == "text":
-            data = _parse_text_response(responses[0])
+            data = _parse_text_response(response_item)
         else:
-            data = _parse_label_response(responses[0])
+            data = _parse_label_response(response_item)
 
         return {"ok": True, "data": data, "error_code": None, "message": None}
 

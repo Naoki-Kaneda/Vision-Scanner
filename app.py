@@ -9,6 +9,12 @@ import logging
 import time
 from collections import defaultdict
 
+try:
+    from cachetools import TTLCache
+    _USE_TTL_CACHE = True
+except ImportError:
+    _USE_TTL_CACHE = False
+
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
 from vision_api import detect_content
@@ -29,8 +35,15 @@ VALID_MODES = {"text", "object"}
 # ─── サーバー側レート制限（IP単位） ────────────────
 RATE_LIMIT_PER_MINUTE = 20  # 1分あたりの最大リクエスト数
 RATE_LIMIT_DAILY = 100      # 1日あたりの最大リクエスト数
-rate_limit_store = defaultdict(list)  # {ip: [timestamp, ...]}
-daily_count_store = defaultdict(lambda: {"date": "", "count": 0})
+
+# メモリリーク対策: TTLCacheで上限付きIPキャッシュ（cachetools未導入時はdefaultdict）
+if _USE_TTL_CACHE:
+    # TTL=86400秒（1日）、最大10000 IP
+    rate_limit_store = TTLCache(maxsize=10000, ttl=90)   # 1分半のスライドウィンドウ用
+    daily_count_store = TTLCache(maxsize=10000, ttl=86400)  # 1日TTL
+else:
+    rate_limit_store = defaultdict(list)
+    daily_count_store = defaultdict(lambda: {"date": "", "count": 0})
 
 
 def is_rate_limited(client_ip):
@@ -44,25 +57,24 @@ def is_rate_limited(client_ip):
     today = time.strftime("%Y-%m-%d")
 
     # 日次制限チェック
-    daily = daily_count_store[client_ip]
-    if daily["date"] != today:
-        daily["date"] = today
-        daily["count"] = 0
+    daily = daily_count_store.get(client_ip, {"date": "", "count": 0})
+    if daily.get("date") != today:
+        daily = {"date": today, "count": 0}
 
     if daily["count"] >= RATE_LIMIT_DAILY:
         return True, f"1日あたりのAPI上限({RATE_LIMIT_DAILY}回)に達しました"
 
-    # 1分あたりの制限チェック
-    timestamps = rate_limit_store[client_ip]
-    # 1分以上前のタイムスタンプを除去
+    # 1分あたりの制限チェック（スライドウィンドウ）
+    timestamps = list(rate_limit_store.get(client_ip, []))
     rate_limit_store[client_ip] = [t for t in timestamps if now - t < 60]
 
     if len(rate_limit_store[client_ip]) >= RATE_LIMIT_PER_MINUTE:
         return True, f"リクエスト頻度が高すぎます（上限: {RATE_LIMIT_PER_MINUTE}回/分）"
 
-    # カウント加算
+    # チェック通過後にのみカウント加算（クライアント側と方針統一）
     rate_limit_store[client_ip].append(now)
     daily["count"] += 1
+    daily_count_store[client_ip] = daily
 
     return False, ""
 
@@ -102,6 +114,14 @@ def analyze_endpoint():
         }), 400
 
     data = request.json
+
+    # JSON が dict 以外（null, 配列等）のとき AttributeError を防ぐ
+    if not isinstance(data, dict):
+        return jsonify({
+            "ok": False, "data": [],
+            "error_code": "INVALID_FORMAT",
+            "message": "リクエストボディはJSONオブジェクトである必要があります",
+        }), 400
 
     # 画像データの存在チェック（Nullや空文字も拒否）
     image_data = data.get("image")
