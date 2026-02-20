@@ -1,0 +1,13 @@
+# 環境設定ファイル（APIキー等の秘密情報）
+.env
+
+# Python仮想環境
+venv/
+
+# キャッシュ
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
+.idea/

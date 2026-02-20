@@ -1,0 +1,454 @@
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Vision AI Scanner - スタイルシート
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+/* ─── カスタムプロパティ（デザイントークン） ───────── */
+:root {
+    --bg-color: #0f1115;
+    --panel-bg: rgba(30, 34, 45, 0.7);
+    --primary-color: #00f2ff;
+    --primary-glow: rgba(0, 242, 255, 0.4);
+    --text-primary: #ffffff;
+    --text-secondary: #a0a4b0;
+    --accent-red: #ff3b3b;
+    --glass-border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ─── リセット ──────────────────────────────── */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+/* ─── ベースレイアウト ───────────────────────── */
+body {
+    font-family: 'Inter', 'Noto Sans JP', sans-serif;
+    background-color: var(--bg-color);
+    background-image:
+        radial-gradient(circle at 10% 20%, rgba(0, 242, 255, 0.1) 0%, transparent 20%),
+        radial-gradient(circle at 90% 80%, rgba(100, 50, 255, 0.1) 0%, transparent 20%);
+    color: var(--text-primary);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.container {
+    width: 95%;
+    height: 90vh;
+    max-width: 1400px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* ─── ヘッダー ──────────────────────────────── */
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 10px;
+}
+
+h1 {
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    background: linear-gradient(90deg, #fff, #a0a4b0);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 6px 12px;
+    border-radius: 20px;
+    border: var(--glass-border);
+}
+
+#status-dot {
+    width: 8px;
+    height: 8px;
+    background-color: var(--text-secondary);
+    border-radius: 50%;
+    transition: background-color 0.3s, box-shadow 0.3s;
+}
+
+#status-dot.active {
+    background-color: var(--primary-color);
+    box-shadow: 0 0 10px var(--primary-glow);
+}
+
+.api-counter {
+    font-size: 0.75rem;
+    color: var(--primary-color);
+    font-family: monospace;
+    margin-right: 8px;
+    padding: 2px 8px;
+    border: 1px solid rgba(0, 242, 255, 0.3);
+    border-radius: 6px;
+}
+
+/* ─── メイングリッド ────────────────────────── */
+.main-grid {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 20px;
+    flex: 1;
+    min-height: 0;
+}
+
+/* ─── パネル共通 ────────────────────────────── */
+.panel {
+    background: var(--panel-bg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: var(--glass-border);
+    border-radius: 24px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+    min-height: 0;
+    overflow: hidden;
+}
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+h2 {
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    margin-right: auto;
+    display: none;
+    /* スペース節約のため非表示 */
+}
+
+/* ─── 映像コンテナ ──────────────────────────── */
+.video-container {
+    flex: 1;
+    background: #000;
+    border-radius: 16px;
+    overflow: hidden;
+    position: relative;
+    border: var(--glass-border);
+    max-height: 48vh;
+}
+
+video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+/* ─── スキャンオーバーレイ（走査線アニメーション） ─ */
+.scan-overlay {
+    position: absolute;
+    top: 50%;
+    left: 10%;
+    width: 80%;
+    height: 2px;
+    background: var(--primary-color);
+    box-shadow: 0 0 15px var(--primary-glow);
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.scanning .scan-overlay {
+    opacity: 1;
+    animation: scanAnimation 2s infinite ease-in-out;
+}
+
+@keyframes scanAnimation {
+    0% {
+        top: 10%;
+        opacity: 0;
+    }
+
+    10% {
+        opacity: 1;
+    }
+
+    90% {
+        opacity: 1;
+    }
+
+    100% {
+        top: 90%;
+        opacity: 0;
+    }
+}
+
+/* ─── ターゲットボックス（OCR読み取り範囲） ───── */
+.target-box {
+    position: absolute;
+    top: 20%;
+    left: 20%;
+    width: 60%;
+    height: 60%;
+    border: 2px dashed rgba(0, 242, 255, 0.6);
+    border-radius: 8px;
+    pointer-events: none;
+    z-index: 10;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.25);
+}
+
+/* ─── 安定化プログレスバー ───────────────────── */
+.stability-bar-container {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    text-align: center;
+    width: 80%;
+}
+
+.stability-help {
+    color: #fff;
+    font-size: 0.85rem;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 6px 14px;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    backdrop-filter: blur(5px);
+    display: inline-block;
+}
+
+.stability-bar-track {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.stability-bar-fill {
+    width: 0%;
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary-color), #00ff88);
+    border-radius: 3px;
+    transition: width 0.1s linear;
+    box-shadow: 0 0 8px var(--primary-glow);
+}
+
+.stability-bar-fill.captured {
+    background: linear-gradient(90deg, #00ff88, #44ffaa);
+    box-shadow: 0 0 12px rgba(0, 255, 136, 0.6);
+}
+
+/* ─── 映像内ツールバー ──────────────────────── */
+.video-tools {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    z-index: 15;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 6px 12px;
+    border-radius: 10px;
+    backdrop-filter: blur(8px);
+}
+
+.tool-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: var(--text-secondary);
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-family: inherit;
+    transition: all 0.2s;
+}
+
+.tool-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+/* ─── モード切り替え（Text / Object） ─────────── */
+.mode-switch {
+    display: flex;
+    gap: 2px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 2px;
+}
+
+.mode-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    padding: 5px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-family: inherit;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.mode-btn.active {
+    background: var(--primary-color);
+    color: #000;
+    box-shadow: 0 0 10px var(--primary-glow);
+}
+
+.mode-btn:hover:not(.active) {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* ─── ソース切り替えボタン ────────────────────── */
+.controls {
+    display: flex;
+    gap: 10px;
+}
+
+.control-btn {
+    background: transparent;
+    border: var(--glass-border);
+    color: var(--text-secondary);
+    padding: 6px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    font-size: 0.9rem;
+}
+
+.control-btn.active,
+.control-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* ─── アクションボタン（Start / Stop） ─────────── */
+.primary-btn {
+    width: 100%;
+    padding: 14px;
+    border-radius: 12px;
+    border: none;
+    background: var(--text-primary);
+    color: #000;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.2s;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+}
+
+.primary-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+}
+
+.primary-btn.scanning {
+    background: var(--accent-red);
+    color: #fff;
+    box-shadow: 0 0 20px rgba(255, 59, 59, 0.4);
+}
+
+.action-bar {
+    margin-top: auto;
+    padding-top: 10px;
+}
+
+/* ─── 結果パネル ────────────────────────────── */
+.result-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-right: 5px;
+}
+
+.result-item {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 0.95rem;
+    animation: slideIn 0.3s ease-out;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.timestamp {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    margin-right: 8px;
+    font-family: monospace;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.placeholder-text {
+    text-align: center;
+    color: var(--text-secondary);
+    margin-top: 50px;
+    opacity: 0.5;
+}
+
+.clear-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.85rem;
+    text-decoration: underline;
+}
+
+.clear-btn:hover {
+    color: var(--text-primary);
+}
+
+/* ─── スクロールバー ────────────────────────── */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}

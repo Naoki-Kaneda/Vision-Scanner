@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vision AI Scanner</title>
+    <meta name="description" content="カメラ映像からリアルタイムでテキスト抽出・物体検出を行うWebアプリ">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Inter:wght@400;600&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+    <div class="container">
+        <!-- ヘッダー -->
+        <header>
+            <h1>Vision AI Scanner</h1>
+            <div class="status-indicator">
+                <span id="api-counter" class="api-counter">API: 0/100</span>
+                <span id="status-dot"></span>
+                <span id="status-text">準備完了</span>
+            </div>
+        </header>
+
+        <!-- メインコンテンツ -->
+        <div class="main-grid">
+            <!-- 左パネル: 映像ソース -->
+            <div class="panel video-panel">
+                <div class="panel-header">
+                    <div class="controls">
+                        <button id="btn-camera" class="control-btn active" onclick="switchSource('camera')">カメラ</button>
+                        <button id="btn-switch-cam" class="control-btn" onclick="toggleCameraDevice()"
+                            style="display: none;">切替</button>
+                        <button id="btn-file" class="control-btn"
+                            onclick="document.getElementById('file-input').click()">ファイル</button>
+                        <input type="file" id="file-input" accept="video/*" style="display: none;"
+                            onchange="handleFileUpload(event)">
+                    </div>
+                </div>
+
+                <div class="video-container">
+                    <video id="video-feed" autoplay playsinline muted></video>
+                    <div class="scan-overlay"></div>
+                    <div class="target-box"></div>
+                    <div id="stability-bar-container" class="stability-bar-container" style="display: none;">
+                        <div class="stability-help">📷 約1秒間カメラを静止させてください</div>
+                        <div class="stability-bar-track">
+                            <div id="stability-bar-fill" class="stability-bar-fill"></div>
+                        </div>
+                    </div>
+                    <div class="video-tools">
+                        <button class="tool-btn" onclick="toggleMirror()" title="左右反転">↔ 反転</button>
+                        <div class="mode-switch">
+                            <button class="mode-btn active" onclick="setMode('text')" id="mode-text">テキスト</button>
+                            <button class="mode-btn" onclick="setMode('object')" id="mode-object">物体</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="action-bar">
+                    <button id="btn-scan" class="primary-btn" onclick="toggleScanning()">
+                        <span class="icon">▶</span> スタート
+                    </button>
+                </div>
+
+                <!-- キャプチャ用非表示キャンバス -->
+                <canvas id="capture-canvas" style="display: none;"></canvas>
+            </div>
+
+            <!-- 右パネル: 検出結果 -->
+            <div class="panel result-panel">
+                <div class="panel-header">
+                    <h2>検出結果</h2>
+                    <button class="clear-btn" onclick="clearResults()">クリア</button>
+                </div>
+                <div id="result-list" class="result-list">
+                    <div class="placeholder-text">スキャンして検出を開始...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+
+</html>
