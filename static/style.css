@@ -493,4 +493,33 @@ video {
         padding: 12px;
         font-size: 0.9rem;
     }
-}/* Proxy Button Style */ .proxy-badge { background: #eee; border: 1px solid #ccc; border-radius: 4px; padding: 2px 8px; font-size: 0.8rem; cursor: pointer; margin-right: 10px; } .proxy-badge.active { background: #d4edda; color: #155724; border-color: #c3e6cb; } .proxy-badge.inactive { background: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+}
+
+/* ─── Proxy Button Style ────────────────────── */
+.proxy-badge {
+    background: #333;
+    color: #fff;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s;
+}
+
+.proxy-badge:hover {
+    opacity: 0.8;
+}
+
+.proxy-badge.active {
+    background: #28a745;
+    color: #fff;
+    border-color: #28a745;
+}
+
+.proxy-badge.inactive {
+    background: #6c757d;
+    color: #fff;
+    border-color: #6c757d;
+}
