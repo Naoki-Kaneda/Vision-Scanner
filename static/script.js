@@ -4,13 +4,19 @@
 
 // ─── 定数・設定 ──────────────────────────────────
 const API_DAILY_LIMIT = 100;          // 1日のAPI呼び出し上限
+const API_WARNING_RATIO = 0.8;       // API上限の警告表示閾値（80%で黄色）
 const TARGET_BOX_RATIO = 0.6;        // ターゲットボックスの映像比率（60%）
 const STABILITY_THRESHOLD = 30;      // 安定判定フレーム数（約1秒@30fps）
 const MOTION_THRESHOLD = 15;         // フレーム間差分の閾値
+const MOTION_CANVAS_WIDTH = 64;      // モーション検出用キャンバス幅
+const MOTION_CANVAS_HEIGHT = 48;     // モーション検出用キャンバス高さ
 const CAMERA_WIDTH = 1280;           // カメラ解像度（幅）
 const CAMERA_HEIGHT = 720;           // カメラ解像度（高さ）
 const JPEG_QUALITY = 0.95;           // キャプチャ画質
 const MIN_RESULT_LENGTH = 5;         // 結果フィルター: 最小文字数
+const LABEL_MAX_LENGTH = 25;         // バウンディングボックスのラベル最大文字数
+const RETRY_DELAY_MS = 5000;         // エラー後の再試行待機時間（ミリ秒）
+const CAPTURE_RESET_DELAY_MS = 1500; // 撮影完了後のバーリセット遅延（ミリ秒）
 
 // ─── DOM要素の参照 ─────────────────────────────────
 const video = document.getElementById('video-feed');
@@ -22,6 +28,16 @@ const resultList = document.getElementById('result-list');
 const btnScan = document.getElementById('btn-scan');
 const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status-text');
+const videoContainer = document.querySelector('.video-container');
+const stabilityBarContainer = document.getElementById('stability-bar-container');
+const stabilityBarFill = document.getElementById('stability-bar-fill');
+const btnProxy = document.getElementById('btn-proxy');
+const apiCounter = document.getElementById('api-counter');
+const btnSwitchCam = document.getElementById('btn-switch-cam');
+const btnCamera = document.getElementById('btn-camera');
+const btnFile = document.getElementById('btn-file');
+const modeText = document.getElementById('mode-text');
+const modeObject = document.getElementById('mode-object');
 
 // ─── アプリケーション状態 ──────────────────────────
 let isScanning = false;
@@ -39,8 +55,8 @@ let stabilityCounter = 0;
 
 // 差分検出用キャンバス（毎フレーム生成せず再利用）
 const motionCanvas = document.createElement('canvas');
-motionCanvas.width = 64;
-motionCanvas.height = 48;
+motionCanvas.width = MOTION_CANVAS_WIDTH;
+motionCanvas.height = MOTION_CANVAS_HEIGHT;
 const motionCtx = motionCanvas.getContext('2d');
 
 
@@ -111,41 +127,44 @@ async function toggleProxy() {
 
 function updateProxyButton(isEnabled) {
     currentProxyEnabled = isEnabled;
-    const btn = document.getElementById('btn-proxy');
-    if (!btn) return;
+    if (!btnProxy) return;
 
     if (isEnabled) {
-        btn.innerText = 'Proxy: ON';
-        btn.className = 'proxy-badge active';
-        btn.title = 'クリックして無効化';
+        btnProxy.textContent = 'Proxy: ON';
+        btnProxy.className = 'proxy-badge active';
+        btnProxy.title = 'クリックして無効化';
     } else {
-        btn.innerText = 'Proxy: OFF';
-        btn.className = 'proxy-badge inactive';
-        btn.title = 'クリックして有効化';
+        btnProxy.textContent = 'Proxy: OFF';
+        btnProxy.className = 'proxy-badge inactive';
+        btnProxy.title = 'クリックして有効化';
     }
+}
+
+/** スキャンボタンを無効化する（API上限到達時）。 */
+function disableScanButton(message) {
+    btnScan.disabled = true;
+    btnScan.innerHTML = `<span class="icon">⚠</span> ${message}`;
+    btnScan.style.opacity = '0.5';
+    btnScan.style.cursor = 'not-allowed';
 }
 
 /** ヘッダーのAPIカウンター表示を更新する。 */
 function updateApiCounter() {
-    const counterEl = document.getElementById('api-counter');
-    if (!counterEl) return;
+    if (!apiCounter) return;
 
-    counterEl.textContent = `API: ${apiCallCount}/${API_DAILY_LIMIT}`;
+    apiCounter.textContent = `API: ${apiCallCount}/${API_DAILY_LIMIT}`;
     if (apiCallCount >= API_DAILY_LIMIT) {
-        counterEl.style.color = '#ff3b3b';
-    } else if (apiCallCount >= API_DAILY_LIMIT * 0.8) {
-        counterEl.style.color = '#ffaa00';
+        apiCounter.style.color = '#ff3b3b';
+    } else if (apiCallCount >= API_DAILY_LIMIT * API_WARNING_RATIO) {
+        apiCounter.style.color = '#ffaa00';
     } else {
         // 日付リセット後に色を復帰
-        counterEl.style.color = '';
+        apiCounter.style.color = '';
     }
 
     // 上限到達時はStartボタンを無効化、それ以外は復帰
     if (apiCallCount >= API_DAILY_LIMIT) {
-        btnScan.disabled = true;
-        btnScan.innerHTML = '<span class="icon">⚠</span> API上限（本日分）';
-        btnScan.style.opacity = '0.5';
-        btnScan.style.cursor = 'not-allowed';
+        disableScanButton('API上限（本日分）');
     } else {
         btnScan.disabled = false;
         btnScan.style.opacity = '';
@@ -156,12 +175,9 @@ function updateApiCounter() {
 /** API上限に達しているか判定する。達している場合はスキャンを停止。 */
 function isApiLimitReached() {
     if (apiCallCount >= API_DAILY_LIMIT) {
-        statusText.innerText = '⚠ API上限に達しました（本日分）';
+        statusText.textContent = '⚠ API上限に達しました（本日分）';
         stopScanning();
-        btnScan.disabled = true;
-        btnScan.innerHTML = '<span class="icon">⚠</span> API上限（本日分）';
-        btnScan.style.opacity = '0.5';
-        btnScan.style.cursor = 'not-allowed';
+        disableScanButton('API上限（本日分）');
         return true;
     }
     return false;
@@ -173,6 +189,14 @@ function isApiLimitReached() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
+/** カメラストリームを停止する。 */
+function stopCameraStream() {
+    if (video.srcObject) {
+        video.srcObject.getTracks().forEach(track => track.stop());
+        video.srcObject = null;
+    }
+}
+
 /** カメラを初期化してHD映像を取得する。 */
 async function setupCamera() {
     try {
@@ -181,7 +205,7 @@ async function setupCamera() {
 
         // カメラが2台以上あれば切り替えボタンを表示
         if (videoDevices.length > 1) {
-            document.getElementById('btn-switch-cam').style.display = 'inline-block';
+            btnSwitchCam.style.display = 'inline-block';
         }
 
         const constraints = {
@@ -208,9 +232,7 @@ async function setupCamera() {
 /** カメラデバイスを切り替える。 */
 function toggleCameraDevice() {
     if (videoDevices.length < 2) return;
-    if (video.srcObject) {
-        video.srcObject.getTracks().forEach(track => track.stop());
-    }
+    stopCameraStream();
     currentDeviceIndex = (currentDeviceIndex + 1) % videoDevices.length;
     setupCamera();
 }
@@ -220,11 +242,7 @@ function handleFileUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    // カメラストリームを停止
-    if (video.srcObject) {
-        video.srcObject.getTracks().forEach(track => track.stop());
-        video.srcObject = null;
-    }
+    stopCameraStream();
 
     // 前のBlob URLがあればリボークしてメモリリークを防止
     if (video.src && video.src.startsWith('blob:')) {
@@ -246,8 +264,8 @@ function switchSource(source) {
 
 /** Camera / File ボタンのアクティブ状態を更新する。 */
 function updateSourceButtons() {
-    document.getElementById('btn-camera').classList.toggle('active', currentSource === 'camera');
-    document.getElementById('btn-file').classList.toggle('active', currentSource === 'file');
+    btnCamera.classList.toggle('active', currentSource === 'camera');
+    btnFile.classList.toggle('active', currentSource === 'file');
 }
 
 
@@ -265,13 +283,13 @@ function startScanning() {
     isScanning = true;
     btnScan.innerHTML = '<span class="icon">■</span> Stop';
     btnScan.classList.add('scanning');
-    document.querySelector('.video-container').classList.add('scanning');
+    videoContainer.classList.add('scanning');
     statusDot.classList.add('active');
-    statusText.innerText = '静止を待っています...';
+    statusText.textContent = '静止を待っています...';
 
     // 安定化バーを表示
-    document.getElementById('stability-bar-container').style.display = 'block';
-    document.getElementById('stability-bar-fill').style.width = '0%';
+    stabilityBarContainer.style.display = 'block';
+    stabilityBarFill.style.width = '0%';
 
     requestAnimationFrame(scanLoop);
 }
@@ -287,12 +305,12 @@ function stopScanning() {
     clearOverlay();
     btnScan.innerHTML = '<span class="icon">▶</span> Start';
     btnScan.classList.remove('scanning');
-    document.querySelector('.video-container').classList.remove('scanning');
+    videoContainer.classList.remove('scanning');
     statusDot.classList.remove('active');
-    statusText.innerText = '準備完了';
+    statusText.textContent = '準備完了';
 
     // 安定化バーを非表示
-    document.getElementById('stability-bar-container').style.display = 'none';
+    stabilityBarContainer.style.display = 'none';
 }
 
 /** requestAnimationFrameベースのスキャンループ。 */
@@ -310,7 +328,6 @@ function checkStabilityAndCapture() {
     motionCtx.drawImage(video, 0, 0, motionCanvas.width, motionCanvas.height);
 
     const currentFrameData = motionCtx.getImageData(0, 0, motionCanvas.width, motionCanvas.height).data;
-    const barFill = document.getElementById('stability-bar-fill');
 
     if (lastFrameData) {
         let diff = 0;
@@ -325,33 +342,33 @@ function checkStabilityAndCapture() {
             // 安定状態
             stabilityCounter++;
             const progress = Math.min((stabilityCounter / STABILITY_THRESHOLD) * 100, 100);
-            barFill.style.width = progress + '%';
-            barFill.classList.remove('captured');
-            statusText.innerText = `安定化中... ${Math.round(progress)}%`;
+            stabilityBarFill.style.width = progress + '%';
+            stabilityBarFill.classList.remove('captured');
+            statusText.textContent = `安定化中... ${Math.round(progress)}%`;
 
             if (stabilityCounter >= STABILITY_THRESHOLD) {
                 // 安定完了 → キャプチャ実行
-                barFill.style.width = '100%';
-                barFill.classList.add('captured');
-                statusText.innerText = '📸 撮影完了！';
+                stabilityBarFill.style.width = '100%';
+                stabilityBarFill.classList.add('captured');
+                statusText.textContent = '📸 撮影完了！';
                 captureAndAnalyze();
                 stabilityCounter = 0;
 
                 // 短い遅延後にバーをリセット
                 setTimeout(() => {
                     if (isScanning) {
-                        barFill.style.width = '0%';
-                        barFill.classList.remove('captured');
-                        statusText.innerText = '静止を待っています...';
+                        stabilityBarFill.style.width = '0%';
+                        stabilityBarFill.classList.remove('captured');
+                        statusText.textContent = '静止を待っています...';
                     }
-                }, 1500);
+                }, CAPTURE_RESET_DELAY_MS);
             }
         } else {
             // 動きを検出 → カウンターリセット
             stabilityCounter = 0;
-            barFill.style.width = '0%';
-            barFill.classList.remove('captured');
-            statusText.innerText = '動きを検出中...';
+            stabilityBarFill.style.width = '0%';
+            stabilityBarFill.classList.remove('captured');
+            statusText.textContent = '動きを検出中...';
         }
     }
 
@@ -379,8 +396,7 @@ function clearOverlay() {
 function drawBoundingBoxes(data, imageSize) {
     clearOverlay();
 
-    const container = document.querySelector('.video-container');
-    const rect = container.getBoundingClientRect();
+    const rect = videoContainer.getBoundingClientRect();
     overlayCanvas.width = rect.width;
     overlayCanvas.height = rect.height;
 
@@ -437,8 +453,8 @@ function drawBoundingBoxes(data, imageSize) {
 
         // 物体モードのみラベルを表示（テキストモードは枠だけで十分）
         if (!isTextMode) {
-            const labelText = item.label.length > 25
-                ? item.label.substring(0, 25) + '…'
+            const labelText = item.label.length > LABEL_MAX_LENGTH
+                ? item.label.substring(0, LABEL_MAX_LENGTH) + '…'
                 : item.label;
             const metrics = overlayCtx.measureText(labelText);
             const labelX = pts[0][0];
@@ -492,7 +508,7 @@ async function captureAndAnalyze() {
 
         // サーバー側レート制限: 再試行スケジュールで連射を防止
         if (response.status === 429) {
-            statusText.innerText = `⚠ ${result.message || 'リクエスト制限中'}`;
+            statusText.textContent = `⚠ ${result.message || 'リクエスト制限中'}`;
             scheduleRetry();
             return;
         }
@@ -512,13 +528,13 @@ async function captureAndAnalyze() {
         } else if (!result.ok) {
             // UIにエラーを表示し、一定時間スキャンを一時停止
             const errorMsg = result.message || `サーバーエラー (${result.error_code})`;
-            statusText.innerText = `⚠ ${errorMsg}`;
+            statusText.textContent = `⚠ ${errorMsg}`;
             console.error(`APIエラー [${result.error_code}]:`, result.message);
             scheduleRetry();
         }
     } catch (err) {
         // 通信失敗もUIに表示
-        statusText.innerText = '⚠ 通信エラー。再試行します...';
+        statusText.textContent = '⚠ 通信エラー。再試行します...';
         console.error('通信エラー:', err);
         scheduleRetry();
     } finally {
@@ -543,10 +559,10 @@ function scheduleRetry() {
         if (isPausedByError) {
             isScanning = true;
             isPausedByError = false;
-            statusText.innerText = '静止を待っています...';
+            statusText.textContent = '静止を待っています...';
             requestAnimationFrame(scanLoop);
         }
-    }, 5000);
+    }, RETRY_DELAY_MS);
 }
 
 
@@ -610,8 +626,7 @@ function clearResults() {
 
 /** ミラー（左右反転）の状態をDOMに反映する。 */
 function updateMirrorState() {
-    const container = document.querySelector('.video-container');
-    container.classList.toggle('mirrored', isMirrored);
+    videoContainer.classList.toggle('mirrored', isMirrored);
 }
 
 /** ミラー（左右反転）を切り替える。 */
@@ -623,8 +638,8 @@ function toggleMirror() {
 /** テキスト / 物体検出モードを切り替える。 */
 function setMode(mode) {
     currentMode = mode;
-    document.getElementById('mode-text').classList.toggle('active', mode === 'text');
-    document.getElementById('mode-object').classList.toggle('active', mode === 'object');
+    modeText.classList.toggle('active', mode === 'text');
+    modeObject.classList.toggle('active', mode === 'object');
     clearResults();
     clearOverlay();
 }
