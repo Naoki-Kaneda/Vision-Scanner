@@ -27,8 +27,8 @@ const JPEG_QUALITY = 0.95;           // キャプチャ画質
 const MIN_RESULT_LENGTH = 5;         // 結果フィルター: 最小文字数
 const LABEL_MAX_LENGTH = 25;         // バウンディングボックスのラベル最大文字数
 const RETRY_DELAY_MS = 5000;         // エラー後の再試行待機時間（ミリ秒）
-const CAPTURE_RESET_DELAY_MS = 1500;       // 撮影完了後のバーリセット遅延（ミリ秒）
-const LABEL_CAPTURE_RESET_DELAY_MS = 5000; // ラベルモード: 次のスキャンまでの待機（ミリ秒）
+const CAPTURE_RESET_DELAY_MS = 10000;      // 撮影完了後のバーリセット遅延（ミリ秒）
+const LABEL_CAPTURE_RESET_DELAY_MS = 10000; // ラベルモード: 次のスキャンまでの待機（ミリ秒）
 // true にするとクライアント側でも日次上限を強制。既定は false（サーバー側429に委譲）
 const ENFORCE_CLIENT_DAILY_LIMIT = false;
 const FETCH_TIMEOUT_MS = 20000;      // fetch タイムアウト（バックエンド15秒＋余裕5秒）
