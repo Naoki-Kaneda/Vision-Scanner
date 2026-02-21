@@ -175,6 +175,12 @@ h1 {
     overflow: hidden;
 }
 
+/* ヘルプポップアップがはみ出せるようにビデオパネルだけoverflowを解除 */
+.video-panel {
+    position: relative;
+    overflow: visible;
+}
+
 .panel-header {
     display: flex;
     justify-content: space-between;
@@ -406,14 +412,14 @@ video {
 /* ─── ヘルプポップアップ ────────────────────── */
 .help-popup {
     position: absolute;
-    bottom: 48px;
+    bottom: 64px;
     right: 8px;
     width: 300px;
     background: var(--md-surface-container-highest);
     border: 1px solid var(--md-outline-variant);
     border-radius: var(--md-shape-corner-l);
     box-shadow: var(--md-elevation-2);
-    z-index: 30;
+    z-index: 100;
     animation: helpFadeIn 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
 
