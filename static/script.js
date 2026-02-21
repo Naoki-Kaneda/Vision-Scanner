@@ -31,7 +31,7 @@ let video, canvas, ctx, overlayCanvas, overlayCtx;
 let resultList, btnScan, statusDot, statusText;
 let videoContainer, stabilityBarContainer, stabilityBarFill;
 let btnProxy, apiCounter, cameraSelector;
-let btnCamera, btnFile, modeText, modeObject;
+let btnCamera, btnFile, modeText, modeObject, modeLabel;
 
 // ─── アプリケーション状態 ──────────────────────────
 let isScanning = false;
@@ -679,8 +679,17 @@ async function captureAndAnalyze() {
             saveApiUsage();
         }
 
-        // 統一レスポンス形式に対応（data は {label, bounds} オブジェクト配列）
-        if (result.ok && result.data && result.data.length > 0) {
+        // ラベルモード: OK/NG 判定結果を表示
+        if (result.ok && currentMode === 'label') {
+            const detected = result.label_detected;
+            const reason = result.label_reason || '';
+            addLabelResult(detected, reason);
+            // テキストが検出されていればバウンディングボックスも描画
+            if (result.data && result.data.length > 0) {
+                drawBoundingBoxes(result.data, result.image_size);
+            }
+        // テキスト・物体モード: 通常の結果表示
+        } else if (result.ok && result.data && result.data.length > 0) {
             drawBoundingBoxes(result.data, result.image_size);
             result.data
                 .filter(isValidResult)
@@ -767,6 +776,46 @@ function addResultItem(item) {
     resultList.prepend(div);
 }
 
+/**
+ * ラベル検出の OK/NG 結果を結果リストに追加する。
+ * @param {boolean} detected - ラベルが検出されたか
+ * @param {string} reason - 判定理由
+ */
+function addLabelResult(detected, reason) {
+    const timeStr = new Date().toLocaleTimeString();
+    const status = detected ? 'ok' : 'ng';
+    const statusText = detected ? 'OK' : 'NG';
+
+    // プレースホルダーを除去
+    const placeholder = document.querySelector('.placeholder-text');
+    if (placeholder) placeholder.remove();
+
+    // XSS対策: DOM操作でテキストを挿入
+    const div = document.createElement('div');
+    div.className = `label-result ${status}`;
+
+    const badge = document.createElement('span');
+    badge.className = `label-badge ${status}`;
+    badge.textContent = statusText;
+
+    const detail = document.createElement('div');
+    detail.className = 'label-detail';
+
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'timestamp';
+    timeSpan.textContent = `[${timeStr}]`;
+
+    const reasonSpan = document.createElement('span');
+    reasonSpan.className = 'reason';
+    reasonSpan.textContent = reason;
+
+    detail.appendChild(timeSpan);
+    detail.appendChild(reasonSpan);
+    div.appendChild(badge);
+    div.appendChild(detail);
+    resultList.prepend(div);
+}
+
 /** 結果リストをクリアする。 */
 function clearResults() {
     // XSS対策ポリシーの統一: innerHTML ではなく DOM API を使用
@@ -800,6 +849,7 @@ function setMode(mode) {
     currentMode = mode;
     if (modeText) modeText.classList.toggle('active', mode === 'text');
     if (modeObject) modeObject.classList.toggle('active', mode === 'object');
+    if (modeLabel) modeLabel.classList.toggle('active', mode === 'label');
     clearResults();
     clearOverlay();
 }
@@ -829,6 +879,7 @@ function init() {
     btnFile = document.getElementById('btn-file');
     modeText = document.getElementById('mode-text');
     modeObject = document.getElementById('mode-object');
+    modeLabel = document.getElementById('mode-label');
     const fileInput = document.getElementById('file-input');
     // 旧テンプレート互換: idが無い場合は既存クラスから取得
     const btnMirror = document.getElementById('btn-mirror')
@@ -868,6 +919,7 @@ function init() {
     if (btnMirror) btnMirror.addEventListener('click', toggleMirror);
     if (modeText) modeText.addEventListener('click', () => setMode('text'));
     if (modeObject) modeObject.addEventListener('click', () => setMode('object'));
+    if (modeLabel) modeLabel.addEventListener('click', () => setMode('label'));
     btnScan.addEventListener('click', toggleScanning);
     if (btnClear) btnClear.addEventListener('click', clearResults);
 

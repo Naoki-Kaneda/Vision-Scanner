@@ -53,7 +53,7 @@ def _mask_proxy_url(url):
 VERIFY_SSL = os.getenv("VERIFY_SSL", "true").lower() != "false"
 
 # 許可されるモード値
-VALID_MODES = {"text", "object"}
+VALID_MODES = {"text", "object", "label"}
 
 # ─── Vision API パラメータ ─────────────────────────
 FEATURE_TYPES = {
@@ -61,6 +61,14 @@ FEATURE_TYPES = {
     "object": "OBJECT_LOCALIZATION",     # 座標付き物体検出（バウンディングボックス対応）
 }
 MAX_RESULTS = 10               # APIが返す最大結果数
+
+# ラベルモードで「ラベルあり」と判定する物体検出キーワード
+LABEL_OBJECT_KEYWORDS = {
+    "label", "sticker", "tag", "barcode", "qr code",
+    "text", "number", "logo", "sign", "ticket", "badge",
+    "packaging", "receipt", "document", "paper", "card",
+    "banner", "poster", "envelope", "stamp",
+}
 LANGUAGE_HINTS = ["en", "ja"]  # OCR言語ヒント（優先順）
 API_TIMEOUT_SECONDS = 15       # APIリクエストタイムアウト（秒）
 
@@ -191,10 +199,17 @@ def detect_content(image_b64, mode="text", request_id=""):
     if mode not in VALID_MODES:
         raise ValueError(f"不正なモード: '{mode}'。許可値: {VALID_MODES}")
 
-    feature_type = FEATURE_TYPES[mode]
+    # ラベルモードは両方の検出を1回のAPIコールで同時実行
+    if mode == "label":
+        features = [
+            {"type": "DOCUMENT_TEXT_DETECTION", "maxResults": MAX_RESULTS},
+            {"type": "OBJECT_LOCALIZATION", "maxResults": MAX_RESULTS},
+        ]
+    else:
+        features = [{"type": FEATURE_TYPES[mode], "maxResults": MAX_RESULTS}]
 
-    # テキストモードの場合のみ前処理を適用
-    if mode == "text":
+    # テキストモードまたはラベルモードの場合は前処理を適用（OCR精度向上）
+    if mode in ("text", "label"):
         try:
             image_b64 = preprocess_image(image_b64)
         except ValueError:
@@ -208,7 +223,7 @@ def detect_content(image_b64, mode="text", request_id=""):
         "requests": [
             {
                 "image": {"content": image_b64},
-                "features": [{"type": feature_type, "maxResults": MAX_RESULTS}],
+                "features": features,
                 "imageContext": {"languageHints": LANGUAGE_HINTS},
             }
         ]
@@ -253,6 +268,18 @@ def detect_content(image_b64, mode="text", request_id=""):
         if mode == "text":
             data, image_size = _parse_text_response(response_item)
             logger.info("テキスト検出結果: %d件, image_size=%s", len(data), image_size)
+        elif mode == "label":
+            data, image_size, label_detected, label_reason = _parse_label_response(response_item)
+            logger.info("ラベル検出結果: detected=%s, reason=%s", label_detected, label_reason)
+            return {
+                "ok": True,
+                "data": data,
+                "image_size": image_size,
+                "label_detected": label_detected,
+                "label_reason": label_reason,
+                "error_code": None,
+                "message": None,
+            }
         else:
             data = _parse_object_response(response_item)
             image_size = None  # 物体モードは正規化座標（0〜1）を使用
@@ -320,6 +347,64 @@ def _parse_text_response(response_data):
         results.append({"label": text, "bounds": bounds})
 
     return results, image_size
+
+
+def _parse_label_response(response_data):
+    """
+    ラベル検出レスポンスを解析する。
+    テキスト検出と物体検出の両方の結果を組み合わせて、ラベルの有無を判定する。
+
+    判定ロジック:
+        - テキストが検出された → ラベルあり（OK）
+        - ラベル関連の物体が検出された → ラベルあり（OK）
+        - どちらも検出されない → ラベルなし（NG）
+
+    Returns:
+        tuple: (data_list, image_size, label_detected, label_reason)
+            data_list: 検出された項目のリスト
+            image_size: ピクセル座標の基準サイズ（テキスト検出時のみ）
+            label_detected: bool ラベルが検出されたか
+            label_reason: str 判定理由の説明
+    """
+    reasons = []
+    all_data = []
+
+    # テキスト検出の結果を確認
+    text_annotations = response_data.get("textAnnotations", [])
+    has_text = len(text_annotations) > 1  # [0]は全文、[1:]が個別テキスト
+
+    image_size = None
+    if has_text:
+        text_data, image_size = _parse_text_response(response_data)
+        all_data.extend(text_data)
+        # 検出されたテキストの先頭部分を理由に含める
+        full_text = text_annotations[0].get("description", "").strip()
+        preview = full_text[:30] + ("..." if len(full_text) > 30 else "")
+        reasons.append(f"テキスト検出: 「{preview}」")
+
+    # 物体検出の結果を確認（ラベル関連のキーワードに一致するもの）
+    objects = response_data.get("localizedObjectAnnotations", [])
+    label_objects = []
+    for obj in objects:
+        name = obj.get("name", "")
+        if name.lower() in LABEL_OBJECT_KEYWORDS:
+            score = obj.get("score", 0)
+            ja_name = OBJECT_TRANSLATIONS.get(name.lower(), "")
+            display = f"{name}（{ja_name}）" if ja_name else name
+            label_objects.append(f"{display} {score:.0%}")
+
+    has_label_object = len(label_objects) > 0
+    if has_label_object:
+        reasons.append(f"物体検出: {', '.join(label_objects)}")
+
+    label_detected = has_text or has_label_object
+
+    if label_detected:
+        label_reason = " / ".join(reasons)
+    else:
+        label_reason = "テキスト・ラベル関連の物体が検出されませんでした"
+
+    return all_data, image_size, label_detected, label_reason
 
 
 def _parse_object_response(response_data):

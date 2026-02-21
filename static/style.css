@@ -480,6 +480,63 @@ video {
     z-index: 50;
 }
 
+/* ─── ラベル検出 OK/NG 表示 ────────────────── */
+.label-result {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: var(--md-shape-corner-m);
+    animation: slideIn 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.label-result.ok {
+    background: rgba(0, 200, 83, 0.12);
+    border: 1px solid rgba(0, 200, 83, 0.4);
+}
+
+.label-result.ng {
+    background: rgba(255, 59, 59, 0.12);
+    border: 1px solid rgba(255, 59, 59, 0.4);
+}
+
+.label-badge {
+    font-size: 1.1rem;
+    font-weight: 700;
+    padding: 4px 14px;
+    border-radius: var(--md-shape-corner-full);
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+}
+
+.label-badge.ok {
+    background: #00c853;
+    color: #003300;
+}
+
+.label-badge.ng {
+    background: #ff3b3b;
+    color: #1a0000;
+}
+
+.label-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.label-detail .timestamp {
+    font-size: 0.7rem;
+}
+
+.label-detail .reason {
+    font-size: 0.8rem;
+    color: var(--md-on-surface-variant);
+    word-break: break-all;
+    line-height: 1.4;
+}
+
 /* ─── 結果パネル ────────────────────────────── */
 .result-list {
     flex: 1;
