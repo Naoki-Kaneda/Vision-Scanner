@@ -337,7 +337,13 @@ video {
     color: var(--md-on-surface);
 }
 
-/* ─── MD3 Segmented Button（モード切替） ────── */
+/* ─── MD3 Segmented Button（モード切替 2段レイアウト） ── */
+.mode-switch-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
 .mode-switch {
     display: flex;
     border: 1px solid var(--md-outline);
@@ -350,9 +356,9 @@ video {
     border: none;
     border-right: 1px solid var(--md-outline);
     color: var(--md-on-surface-variant);
-    padding: 6px 16px;
+    padding: 5px 12px;
     cursor: pointer;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-family: inherit;
     font-weight: 600;
     transition: all var(--md-motion-standard);
@@ -451,6 +457,8 @@ video {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    max-height: 320px;
+    overflow-y: auto;
 }
 
 .help-item {
@@ -488,6 +496,26 @@ video {
 .help-mode-badge.label {
     background: var(--md-primary-container);
     color: var(--md-on-primary-container);
+}
+
+.help-mode-badge.face {
+    background: rgba(0, 191, 255, 0.2);
+    color: #00bfff;
+}
+
+.help-mode-badge.logo {
+    background: rgba(212, 190, 230, 0.2);
+    color: var(--md-tertiary);
+}
+
+.help-mode-badge.classify {
+    background: rgba(129, 199, 132, 0.2);
+    color: #81C784;
+}
+
+.help-mode-badge.web {
+    background: rgba(255, 183, 77, 0.2);
+    color: #FFB74D;
 }
 
 .help-ok {
@@ -731,6 +759,128 @@ video {
 
 .clear-btn:hover {
     background: rgba(168, 199, 250, 0.08);
+}
+
+/* ─── 顔検出 感情カード ────────────────────── */
+.face-result {
+    background: var(--md-surface-container-high);
+    padding: 12px 16px;
+    border-radius: var(--md-shape-corner-m);
+    border-left: 3px solid #00bfff;
+    animation: slideIn 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.face-result .face-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.face-result .face-confidence {
+    font-size: 0.75rem;
+    color: #00bfff;
+    font-weight: 600;
+}
+
+.face-result .emotion-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+}
+
+.face-result .emotion-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.78rem;
+    color: var(--md-on-surface-variant);
+}
+
+.face-result .emotion-level {
+    font-weight: 500;
+}
+
+.face-result .emotion-level.high {
+    color: #FFB74D;
+}
+
+.face-result .emotion-level.very-high {
+    color: #ff7043;
+}
+
+/* ─── 分類タグ バッジ表示 ─────────────────── */
+.classify-result {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 0 0;
+}
+
+.classify-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--md-surface-container-highest);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-shape-corner-full);
+    padding: 4px 12px;
+    font-size: 0.8rem;
+    color: var(--md-on-surface);
+}
+
+.classify-tag .tag-score {
+    font-size: 0.7rem;
+    color: #81C784;
+    font-weight: 600;
+}
+
+/* ─── Web検索結果 ──────────────────────────── */
+.web-result {
+    background: var(--md-surface-container-high);
+    padding: 12px 16px;
+    border-radius: var(--md-shape-corner-m);
+    border-left: 3px solid #FFB74D;
+    animation: slideIn 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.web-result .web-section-title {
+    font-size: 0.75rem;
+    color: #FFB74D;
+    font-weight: 600;
+    margin-bottom: 6px;
+    margin-top: 10px;
+}
+
+.web-result .web-section-title:first-of-type {
+    margin-top: 0;
+}
+
+.web-result .web-best-guess {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    margin-bottom: 8px;
+}
+
+.web-result .web-entity {
+    font-size: 0.82rem;
+    color: var(--md-on-surface-variant);
+    padding: 2px 0;
+}
+
+.web-result .web-link {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--md-primary);
+    text-decoration: none;
+    padding: 3px 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.web-result .web-link:hover {
+    text-decoration: underline;
 }
 
 /* ─── スクロールバー ────────────────────────── */

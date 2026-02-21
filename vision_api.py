@@ -16,7 +16,12 @@ import urllib3
 from dotenv import load_dotenv
 from PIL import Image, ImageEnhance
 
-from translations import OBJECT_TRANSLATIONS
+from translations import (
+    OBJECT_TRANSLATIONS,
+    EMOTION_LIKELIHOOD,
+    EMOTION_NAMES,
+    LABEL_TRANSLATIONS,
+)
 
 # ─── 設定 ──────────────────────────────────────
 # 単体テスト時にもenvが確実に読まれるよう、各モジュールでも呼ぶ（冪等）
@@ -53,12 +58,16 @@ def _mask_proxy_url(url):
 VERIFY_SSL = os.getenv("VERIFY_SSL", "true").lower() != "false"
 
 # 許可されるモード値
-VALID_MODES = {"text", "object", "label"}
+VALID_MODES = {"text", "object", "label", "face", "logo", "classify", "web"}
 
 # ─── Vision API パラメータ ─────────────────────────
 FEATURE_TYPES = {
     "text": "DOCUMENT_TEXT_DETECTION",   # TEXT_DETECTIONより高精度
     "object": "OBJECT_LOCALIZATION",     # 座標付き物体検出（バウンディングボックス対応）
+    "face": "FACE_DETECTION",            # 顔検出・感情分析
+    "logo": "LOGO_DETECTION",            # ロゴ（ブランド）検出
+    "classify": "LABEL_DETECTION",       # 画像分類タグ
+    "web": "WEB_DETECTION",              # Web類似画像検索
 }
 MAX_RESULTS = 10               # APIが返す最大結果数
 
@@ -138,6 +147,26 @@ def set_proxy_enabled(enabled: bool):
 session.verify = VERIFY_SSL
 
 
+# ─── 画像寸法取得 ─────────────────────────────────
+def _get_image_dimensions(image_b64):
+    """
+    Base64画像のピクセル寸法を取得する（デコードのみ、画像加工なし）。
+    顔検出・ロゴ検出モードでバウンディングボックスの座標正規化に使用。
+
+    Args:
+        image_b64: Base64エンコードされた画像文字列。
+
+    Returns:
+        [width, height] または None（取得失敗時）
+    """
+    try:
+        image_bytes = base64.b64decode(image_b64)
+        img = Image.open(io.BytesIO(image_bytes))
+        return [img.width, img.height]
+    except Exception:
+        return None
+
+
 # ─── 画像前処理 ──────────────────────────────────
 def preprocess_image(image_base64):
     """
@@ -178,19 +207,27 @@ def detect_content(image_b64, mode="text", request_id=""):
 
     Args:
         image_b64: Base64エンコードされた画像文字列。
-        mode: 'text'（テキスト抽出）、'object'（物体検出）、
-              または 'label'（ラベル有無判定：テキスト＋物体検出の併用）。
+        mode: 検出モード。以下のいずれか:
+            - 'text': テキスト抽出（OCR）
+            - 'object': 物体検出（バウンディングボックス付き）
+            - 'label': ラベル有無判定（テキスト＋物体検出の併用）
+            - 'face': 顔検出・感情分析
+            - 'logo': ロゴ（ブランド）検出
+            - 'classify': 画像分類タグ
+            - 'web': Web類似画像検索
         request_id: リクエスト相関ID（ログ追跡用、省略可）。
 
     Returns:
         dict: {
             "ok": bool,
-            "data": list[dict],  # [{"label": str, "bounds": [[x,y],...]}, ...]
-            "image_size": [w, h] | None,  # テキスト/ラベルモードのみ（ピクセル座標の基準）
-            "label_detected": bool,  # ラベルモードのみ
-            "label_reason": str,     # ラベルモードのみ（判定理由）
+            "data": list[dict],
+            "image_size": [w, h] | None,
             "error_code": str|None,
             "message": str|None,
+            # モード固有フィールド:
+            "label_detected": bool,  # labelモードのみ
+            "label_reason": str,     # labelモードのみ
+            "web_detail": dict,      # webモードのみ
         }
 
     Raises:
@@ -280,6 +317,30 @@ def detect_content(image_b64, mode="text", request_id=""):
                 "image_size": image_size,
                 "label_detected": label_detected,
                 "label_reason": label_reason,
+                "error_code": None,
+                "message": None,
+            }
+        elif mode == "face":
+            image_size = _get_image_dimensions(image_b64)
+            data = _parse_face_response(response_item)
+            logger.info("顔検出結果: %d件, image_size=%s", len(data), image_size)
+        elif mode == "logo":
+            image_size = _get_image_dimensions(image_b64)
+            data = _parse_logo_response(response_item)
+            logger.info("ロゴ検出結果: %d件, image_size=%s", len(data), image_size)
+        elif mode == "classify":
+            data = _parse_classify_response(response_item)
+            image_size = None
+            logger.info("分類タグ結果: %d件", len(data))
+        elif mode == "web":
+            data, web_detail = _parse_web_response(response_item)
+            image_size = None
+            logger.info("Web検索結果: entities=%d件", len(web_detail.get("entities", [])))
+            return {
+                "ok": True,
+                "data": data,
+                "image_size": None,
+                "web_detail": web_detail,
                 "error_code": None,
                 "message": None,
             }
@@ -437,3 +498,160 @@ def _parse_object_response(response_data):
         results.append({"label": label, "bounds": bounds})
 
     return results
+
+
+def _parse_face_response(response_data):
+    """
+    顔検出（FACE_DETECTION）レスポンスを解析する。
+    各顔のバウンディングボックスと感情分析結果を返す。
+
+    Returns:
+        list: [{
+            "label": str,
+            "bounds": [[x,y], ...],  # ピクセル座標
+            "emotions": dict,        # {"joy": "LIKELY", ...}
+            "confidence": float,
+        }, ...]
+    """
+    annotations = response_data.get("faceAnnotations", [])
+    results = []
+    for idx, face in enumerate(annotations, 1):
+        confidence = face.get("detectionConfidence", 0)
+
+        # 感情データを構造化
+        emotions = {
+            "joy": face.get("joyLikelihood", "UNKNOWN"),
+            "sorrow": face.get("sorrowLikelihood", "UNKNOWN"),
+            "anger": face.get("angerLikelihood", "UNKNOWN"),
+            "surprise": face.get("surpriseLikelihood", "UNKNOWN"),
+        }
+
+        # POSSIBLE以上の感情のみラベルに含める
+        significant_levels = {"POSSIBLE", "LIKELY", "VERY_LIKELY"}
+        significant_emotions = []
+        for emo_key, emo_value in emotions.items():
+            if emo_value in significant_levels:
+                ja_name = EMOTION_NAMES.get(emo_key, emo_key)
+                ja_level = EMOTION_LIKELIHOOD.get(emo_value, emo_value)
+                significant_emotions.append(f"{ja_name}({ja_level})")
+
+        emotion_text = ", ".join(significant_emotions) if significant_emotions else "表情なし"
+        label = f"顔{idx}: {emotion_text} - {confidence:.0%}"
+
+        # バウンディングボックス（fdBoundingPoly優先、なければboundingPoly）
+        fd_poly = face.get("fdBoundingPoly", {})
+        poly = fd_poly if fd_poly.get("vertices") else face.get("boundingPoly", {})
+        vertices = poly.get("vertices", [])
+        bounds = [[v.get("x", 0), v.get("y", 0)] for v in vertices] if vertices else []
+
+        results.append({
+            "label": label,
+            "bounds": bounds,
+            "emotions": emotions,
+            "confidence": confidence,
+        })
+
+    return results
+
+
+def _parse_logo_response(response_data):
+    """
+    ロゴ検出（LOGO_DETECTION）レスポンスを解析する。
+    各ロゴのブランド名、スコア、バウンディングボックスを返す。
+
+    Returns:
+        list: [{"label": str, "bounds": [[x,y], ...]}, ...]
+    """
+    annotations = response_data.get("logoAnnotations", [])
+    results = []
+    for logo in annotations:
+        name = logo.get("description", "不明")
+        score = logo.get("score", 0)
+        label = f"{name} - {score:.0%}"
+
+        vertices = logo.get("boundingPoly", {}).get("vertices", [])
+        bounds = [[v.get("x", 0), v.get("y", 0)] for v in vertices] if vertices else []
+
+        results.append({"label": label, "bounds": bounds})
+
+    return results
+
+
+def _parse_classify_response(response_data):
+    """
+    分類タグ（LABEL_DETECTION）レスポンスを解析する。
+    画像全体に対する分類ラベルとスコアを返す（座標なし）。
+
+    Returns:
+        list: [{"label": str, "score": float}, ...]
+    """
+    annotations = response_data.get("labelAnnotations", [])
+    results = []
+    for item in annotations:
+        en_name = item.get("description", "")
+        score = item.get("score", 0)
+        ja_name = LABEL_TRANSLATIONS.get(en_name.lower(), "")
+
+        if ja_name:
+            label = f"{en_name}（{ja_name}）- {score:.0%}"
+        else:
+            label = f"{en_name} - {score:.0%}"
+
+        results.append({"label": label, "score": score})
+
+    return results
+
+
+def _parse_web_response(response_data):
+    """
+    Web類似検索（WEB_DETECTION）レスポンスを解析する。
+    エンティティ情報、関連ページ、類似画像URLを返す。
+
+    Returns:
+        tuple: (data_list, web_detail)
+            data_list: 統一データ形式（推定ラベル等）
+            web_detail: 構造化されたWeb検索結果
+    """
+    web = response_data.get("webDetection", {})
+
+    # ベストゲス推定
+    best_guess_labels = web.get("bestGuessLabels", [])
+    best_guess = best_guess_labels[0].get("label", "") if best_guess_labels else None
+
+    # Webエンティティ（上位5件）
+    entities = []
+    for entity in web.get("webEntities", [])[:5]:
+        name = entity.get("description", "")
+        if name:
+            entities.append({"name": name, "score": entity.get("score", 0)})
+
+    # 関連ページ（上位5件）
+    pages = []
+    for page_info in web.get("pagesWithMatchingImages", [])[:5]:
+        pages.append({
+            "url": page_info.get("url", ""),
+            "title": page_info.get("pageTitle", ""),
+        })
+
+    # 類似画像URL（上位3件）
+    similar_images = [
+        img.get("url", "")
+        for img in web.get("visuallySimilarImages", [])[:3]
+        if img.get("url")
+    ]
+
+    # 統一data形式（ラベルのみ、boundsなし）
+    data = []
+    if best_guess:
+        data.append({"label": f"推定: {best_guess}"})
+    for entity in entities:
+        data.append({"label": f"{entity['name']} ({entity['score']:.0%})"})
+
+    web_detail = {
+        "best_guess": best_guess,
+        "entities": entities,
+        "pages": pages,
+        "similar_images": similar_images,
+    }
+
+    return data, web_detail

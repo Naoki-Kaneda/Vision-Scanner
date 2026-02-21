@@ -1,6 +1,6 @@
 """
-物体検出ラベルの日本語翻訳辞書。
-Google Cloud Vision APIのLABEL_DETECTION結果を日本語で表示するために使用。
+検出結果の日本語翻訳辞書。
+Google Cloud Vision APIの各種検出結果を日本語で表示するために使用。
 """
 
 OBJECT_TRANSLATIONS = {
@@ -70,4 +70,41 @@ OBJECT_TRANSLATIONS = {
     "refrigerator": "冷蔵庫", "microwave": "電子レンジ",
     "oven": "オーブン", "sink": "シンク", "toilet": "トイレ",
     "couch": "ソファ", "vase": "花瓶", "pillow": "枕",
+}
+
+# ─── 顔検出: 感情の尤度ラベル翻訳 ───────────────────
+EMOTION_LIKELIHOOD = {
+    "VERY_UNLIKELY": "非常に低い",
+    "UNLIKELY": "低い",
+    "POSSIBLE": "あり得る",
+    "LIKELY": "高い",
+    "VERY_LIKELY": "非常に高い",
+}
+
+# ─── 顔検出: 感情名の翻訳 ────────────────────────────
+EMOTION_NAMES = {
+    "joy": "喜び",
+    "sorrow": "悲しみ",
+    "anger": "怒り",
+    "surprise": "驚き",
+}
+
+# ─── 分類タグ（LABEL_DETECTION）用の翻訳辞書 ───────────
+# OBJECT_TRANSLATIONS を基盤に、LABEL_DETECTION 固有のラベルを追加
+LABEL_TRANSLATIONS = {
+    **OBJECT_TRANSLATIONS,
+    "electronics": "電子機器", "gadget": "ガジェット",
+    "font": "フォント", "brand": "ブランド", "product": "製品",
+    "screenshot": "スクリーンショット", "software": "ソフトウェア",
+    "multimedia": "マルチメディア", "website": "ウェブサイト",
+    "material property": "素材特性", "pattern": "パターン",
+    "rectangle": "四角形", "parallel": "並行", "symmetry": "対称",
+    "circle": "円", "line": "線",
+    "automotive design": "自動車デザイン",
+    "landscape": "風景", "nature": "自然", "urban": "都市",
+    "architecture": "建築", "interior design": "インテリアデザイン",
+    "event": "イベント", "sport": "スポーツ", "recreation": "レクリエーション",
+    "wrench": "レンチ", "pliers": "ペンチ", "hammer": "ハンマー",
+    "screwdriver": "ドライバー", "measurement": "計測",
+    "industrial": "工業", "manufacturing": "製造", "factory": "工場",
 }

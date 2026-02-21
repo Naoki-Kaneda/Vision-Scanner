@@ -52,10 +52,18 @@
                     <div class="video-tools">
                         <button id="btn-flip-cam" class="tool-btn hidden" title="インカメ/外カメ切替">⟳ 外カメ</button>
                         <button id="btn-mirror" class="tool-btn" title="左右反転">↔ 反転</button>
-                        <div class="mode-switch">
-                            <button class="mode-btn active" id="mode-text">テキスト</button>
-                            <button class="mode-btn" id="mode-object">物体</button>
-                            <button class="mode-btn" id="mode-label">ラベル</button>
+                        <div class="mode-switch-group">
+                            <div class="mode-switch">
+                                <button class="mode-btn active" id="mode-text">テキスト</button>
+                                <button class="mode-btn" id="mode-object">物体</button>
+                                <button class="mode-btn" id="mode-label">ラベル</button>
+                            </div>
+                            <div class="mode-switch">
+                                <button class="mode-btn" id="mode-face">顔</button>
+                                <button class="mode-btn" id="mode-logo">ロゴ</button>
+                                <button class="mode-btn" id="mode-classify">分類</button>
+                                <button class="mode-btn" id="mode-web">Web</button>
+                            </div>
                         </div>
                         <button id="btn-help" class="help-btn" title="モード説明">?</button>
                     </div>
@@ -79,9 +87,25 @@
                                 <span class="help-mode-badge label">ラベル</span>
                                 <p>ラベルの有無を判定します。テキストが読み取れれば <span class="help-ok">OK</span>、読み取れなければ <span class="help-ng">NG</span> と表示します。検査間隔は5秒です。</p>
                             </div>
+                            <div class="help-item">
+                                <span class="help-mode-badge face">顔</span>
+                                <p>顔を検出し、表情（喜び・悲しみ・怒り・驚き）を分析します。複数の顔を同時に検出できます。</p>
+                            </div>
+                            <div class="help-item">
+                                <span class="help-mode-badge logo">ロゴ</span>
+                                <p>画像内のブランドロゴを検出し、名前とスコアを表示します。商品パッケージの確認に便利です。</p>
+                            </div>
+                            <div class="help-item">
+                                <span class="help-mode-badge classify">分類</span>
+                                <p>画像全体をAIが分類し、タグ付けします。「何が映っているか」を概要として把握できます。</p>
+                            </div>
+                            <div class="help-item">
+                                <span class="help-mode-badge web">Web</span>
+                                <p>類似画像をWeb上から検索し、推定名・関連ページ・類似画像のリンクを表示します。</p>
+                            </div>
                         </div>
                         <div class="help-version">
-                            Vision AI Scanner v1.2.0
+                            Vision AI Scanner v1.3.0
                         </div>
                     </div>
                 </div>

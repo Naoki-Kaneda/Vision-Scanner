@@ -328,3 +328,147 @@ class TestGetProxyStatus:
         assert status["enabled"] is True
         assert "secret" not in status["url"]
         assert "***:***" in status["url"]
+
+
+# ─── 顔検出パーサーテスト ─────────────────────────────
+class TestFaceParser:
+    """_parse_face_response のテスト。"""
+
+    def test_空レスポンスで空リストを返す(self):
+        from vision_api import _parse_face_response
+        assert _parse_face_response({}) == []
+        assert _parse_face_response({"faceAnnotations": []}) == []
+
+    def test_感情付き顔を正しくパースする(self):
+        from vision_api import _parse_face_response
+        result = _parse_face_response({
+            "faceAnnotations": [{
+                "boundingPoly": {"vertices": [
+                    {"x": 10, "y": 10}, {"x": 100, "y": 10},
+                    {"x": 100, "y": 100}, {"x": 10, "y": 100},
+                ]},
+                "detectionConfidence": 0.95,
+                "joyLikelihood": "VERY_LIKELY",
+                "sorrowLikelihood": "VERY_UNLIKELY",
+                "angerLikelihood": "UNLIKELY",
+                "surpriseLikelihood": "POSSIBLE",
+            }]
+        })
+        assert len(result) == 1
+        assert "喜び" in result[0]["label"]
+        assert result[0]["confidence"] == 0.95
+        assert len(result[0]["bounds"]) == 4
+        assert result[0]["emotions"]["joy"] == "VERY_LIKELY"
+
+    def test_fdBoundingPolyを優先する(self):
+        from vision_api import _parse_face_response
+        result = _parse_face_response({
+            "faceAnnotations": [{
+                "boundingPoly": {"vertices": [
+                    {"x": 0, "y": 0}, {"x": 200, "y": 0},
+                    {"x": 200, "y": 200}, {"x": 0, "y": 200},
+                ]},
+                "fdBoundingPoly": {"vertices": [
+                    {"x": 50, "y": 50}, {"x": 150, "y": 50},
+                    {"x": 150, "y": 150}, {"x": 50, "y": 150},
+                ]},
+                "detectionConfidence": 0.9,
+                "joyLikelihood": "UNLIKELY",
+                "sorrowLikelihood": "UNLIKELY",
+                "angerLikelihood": "UNLIKELY",
+                "surpriseLikelihood": "UNLIKELY",
+            }]
+        })
+        assert result[0]["bounds"][0] == [50, 50]
+
+
+# ─── ロゴ検出パーサーテスト ────────────────────────────
+class TestLogoParser:
+    """_parse_logo_response のテスト。"""
+
+    def test_空レスポンスで空リストを返す(self):
+        from vision_api import _parse_logo_response
+        assert _parse_logo_response({}) == []
+
+    def test_ロゴを正しくパースする(self):
+        from vision_api import _parse_logo_response
+        result = _parse_logo_response({
+            "logoAnnotations": [{
+                "description": "Google",
+                "score": 0.95,
+                "boundingPoly": {"vertices": [
+                    {"x": 10, "y": 10}, {"x": 100, "y": 10},
+                    {"x": 100, "y": 50}, {"x": 10, "y": 50},
+                ]},
+            }]
+        })
+        assert len(result) == 1
+        assert "Google" in result[0]["label"]
+        assert "95%" in result[0]["label"]
+        assert len(result[0]["bounds"]) == 4
+
+
+# ─── 分類タグパーサーテスト ────────────────────────────
+class TestClassifyParser:
+    """_parse_classify_response のテスト。"""
+
+    def test_空レスポンスで空リストを返す(self):
+        from vision_api import _parse_classify_response
+        assert _parse_classify_response({}) == []
+
+    def test_分類タグを正しくパースする(self):
+        from vision_api import _parse_classify_response
+        result = _parse_classify_response({
+            "labelAnnotations": [
+                {"description": "Laptop", "score": 0.98, "topicality": 0.98},
+                {"description": "Electronics", "score": 0.92, "topicality": 0.92},
+            ]
+        })
+        assert len(result) == 2
+        assert "Laptop" in result[0]["label"]
+        assert result[0]["score"] == 0.98
+
+    def test_翻訳辞書にある場合日本語が付与される(self):
+        from vision_api import _parse_classify_response
+        result = _parse_classify_response({
+            "labelAnnotations": [
+                {"description": "Laptop", "score": 0.98, "topicality": 0.98},
+            ]
+        })
+        assert "ノートPC" in result[0]["label"]
+
+
+# ─── Web検索パーサーテスト ─────────────────────────────
+class TestWebParser:
+    """_parse_web_response のテスト。"""
+
+    def test_空レスポンスで空を返す(self):
+        from vision_api import _parse_web_response
+        data, detail = _parse_web_response({})
+        assert data == []
+        assert detail["best_guess"] is None
+        assert detail["entities"] == []
+
+    def test_Web検索結果を正しくパースする(self):
+        from vision_api import _parse_web_response
+        data, detail = _parse_web_response({
+            "webDetection": {
+                "bestGuessLabels": [{"label": "torque wrench"}],
+                "webEntities": [
+                    {"description": "TOHNICHI", "score": 0.85},
+                    {"description": "Torque wrench", "score": 0.7},
+                ],
+                "pagesWithMatchingImages": [
+                    {"url": "https://example.com/page1", "pageTitle": "Example Page"},
+                ],
+                "visuallySimilarImages": [
+                    {"url": "https://example.com/img1.jpg"},
+                ],
+            }
+        })
+        assert detail["best_guess"] == "torque wrench"
+        assert len(detail["entities"]) == 2
+        assert detail["entities"][0]["name"] == "TOHNICHI"
+        assert len(detail["pages"]) == 1
+        assert len(detail["similar_images"]) == 1
+        assert any("torque wrench" in d["label"] for d in data)
