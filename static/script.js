@@ -5,7 +5,9 @@
 // ─── 定数・設定 ──────────────────────────────────
 let API_DAILY_LIMIT = 1000;           // 1日のAPI呼び出し上限（サーバーから動的取得）
 const API_WARNING_RATIO = 0.8;       // API上限の警告表示閾値（80%で黄色）
-const TARGET_BOX_RATIO = 0.6;        // ターゲットボックスの映像比率（60%）
+const TARGET_BOX_RATIO = 0.6;        // ターゲットボックスの横幅比率（60%）
+const TARGET_BOX_TOP = 0.10;         // ターゲットボックスの上端位置（10%）
+const TARGET_BOX_HEIGHT = 0.58;      // ターゲットボックスの高さ比率（58%、ボタン2段との被り回避）
 const STABILITY_THRESHOLD = 30;      // 安定判定フレーム数（約1秒@30fps）
 const MOTION_THRESHOLD = 30;         // フレーム間差分の閾値（カメラノイズ耐性を確保）
 const MOTION_CANVAS_WIDTH = 64;      // モーション検出用キャンバス幅
@@ -565,12 +567,11 @@ function drawBoundingBoxes(data, imageSize) {
     overlayCanvas.width = rect.width;
     overlayCanvas.height = rect.height;
 
-    // ターゲットボックスの表示領域（コンテナ基準）
-    const offsetRatio = (1 - TARGET_BOX_RATIO) / 2;
-    const targetX = rect.width * offsetRatio;
-    const targetY = rect.height * offsetRatio;
+    // ターゲットボックスの表示領域（コンテナ基準、CSSの.target-boxと同期）
+    const targetX = rect.width * (1 - TARGET_BOX_RATIO) / 2;  // 横: 中央寄せ
+    const targetY = rect.height * TARGET_BOX_TOP;               // 縦: 上端10%
     const targetW = rect.width * TARGET_BOX_RATIO;
-    const targetH = rect.height * TARGET_BOX_RATIO;
+    const targetH = rect.height * TARGET_BOX_HEIGHT;
 
     const config = MODE_BOX_CONFIG[currentMode] || MODE_BOX_CONFIG.object;
     if (!config.color) return; // classify/webモードはバウンディングボックス描画なし
@@ -648,11 +649,11 @@ async function captureAndAnalyze() {
     isAnalyzing = true;
     clearOverlay();
 
-    // ターゲットボックス内のみをクロップして送信
-    const srcX = video.videoWidth * (1 - TARGET_BOX_RATIO) / 2;
-    const srcY = video.videoHeight * (1 - TARGET_BOX_RATIO) / 2;
+    // ターゲットボックス内のみをクロップして送信（CSSの.target-boxと同期）
+    const srcX = video.videoWidth * (1 - TARGET_BOX_RATIO) / 2;  // 横: 中央寄せ
+    const srcY = video.videoHeight * TARGET_BOX_TOP;               // 縦: 上端10%
     const srcW = video.videoWidth * TARGET_BOX_RATIO;
-    const srcH = video.videoHeight * TARGET_BOX_RATIO;
+    const srcH = video.videoHeight * TARGET_BOX_HEIGHT;
 
     canvas.width = srcW;
     canvas.height = srcH;

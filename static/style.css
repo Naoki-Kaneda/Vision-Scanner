@@ -252,10 +252,10 @@ video {
 /* ─── ターゲットボックス ─────────────────────── */
 .target-box {
     position: absolute;
-    top: 20%;
+    top: 10%;
     left: 20%;
     width: 60%;
-    height: 60%;
+    height: 58%;
     border: 2px dashed rgba(168, 199, 250, 0.5);
     border-radius: var(--md-shape-corner-m);
     pointer-events: none;
