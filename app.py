@@ -49,6 +49,7 @@ ERR_REQUEST_TOO_LARGE = "REQUEST_TOO_LARGE"
 ERR_BAD_REQUEST = "BAD_REQUEST"
 ERR_UNAUTHORIZED = "UNAUTHORIZED"
 ERR_INVALID_TYPE = "INVALID_TYPE"
+ERR_METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
 
 # 起動時セキュリティチェック
 def _check_admin_secret(secret):
@@ -210,6 +211,17 @@ def handle_bad_request(_e):
     }), 400
 
 
+@app.errorhandler(405)
+def handle_method_not_allowed(_e):
+    """許可されていないHTTPメソッドのJSONレスポンス。"""
+    return jsonify({
+        "ok": False,
+        "data": [],
+        "error_code": ERR_METHOD_NOT_ALLOWED,
+        "message": "許可されていないHTTPメソッドです",
+    }), 405
+
+
 # ─── レスポンスヘルパー ────────────────────────────
 def _error_response(error_code, message, status_code=400):
     """標準化されたエラーレスポンスを生成する。"""
@@ -296,7 +308,7 @@ def get_proxy_config():
     """現在のプロキシ設定状態を返す（認証時はURL情報付き、未認証時はON/OFFのみ）"""
     status = get_proxy_status()
     auth_header = request.headers.get("X-Admin-Secret", "")
-    if not ADMIN_SECRET or auth_header != ADMIN_SECRET:
+    if not ADMIN_SECRET or not secrets.compare_digest(auth_header, ADMIN_SECRET):
         return jsonify({"enabled": status["enabled"]})
     return jsonify(status)
 
@@ -305,8 +317,11 @@ def get_proxy_config():
 def update_proxy_config():
     """プロキシ設定を更新する（認証必須）"""
     auth_header = request.headers.get("X-Admin-Secret", "")
-    if not ADMIN_SECRET or auth_header != ADMIN_SECRET:
+    if not ADMIN_SECRET or not secrets.compare_digest(auth_header, ADMIN_SECRET):
         return _error_response(ERR_UNAUTHORIZED, "管理APIへのアクセス権がありません", 403)
+
+    if not request.is_json:
+        return _error_response(ERR_INVALID_FORMAT, "リクエストはJSON形式である必要があります")
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or "enabled" not in data:

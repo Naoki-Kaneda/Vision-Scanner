@@ -521,6 +521,43 @@ class TestProxyMalformedInput:
         data = response.get_json()
         assert data["error_code"] == "INVALID_FORMAT"
 
+    @patch("app.ADMIN_SECRET", "test-secret-123")
+    def test_enabledフィールド未送信は400を返す(self, client):
+        """enabledフィールドがないJSONオブジェクトは400を返すこと。"""
+        response = client.post(
+            "/api/config/proxy",
+            json={"some_other_field": True},
+            headers={"X-Admin-Secret": "test-secret-123"},
+        )
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["error_code"] == "INVALID_FORMAT"
+
+    @patch("app.ADMIN_SECRET", "test-secret-123")
+    def test_enabled整数型は型エラーを返す(self, client):
+        """enabledがinteger(1)の場合はINVALID_TYPEを返すこと。"""
+        response = client.post(
+            "/api/config/proxy",
+            json={"enabled": 1},
+            headers={"X-Admin-Secret": "test-secret-123"},
+        )
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["error_code"] == "INVALID_TYPE"
+
+    @patch("app.ADMIN_SECRET", "test-secret-123")
+    def test_JSON以外のContent_Typeは400を返す(self, client):
+        """Content-Typeがapplication/jsonでない場合はINVALID_FORMATを返すこと。"""
+        response = client.post(
+            "/api/config/proxy",
+            data="enabled=true",
+            content_type="application/x-www-form-urlencoded",
+            headers={"X-Admin-Secret": "test-secret-123"},
+        )
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["error_code"] == "INVALID_FORMAT"
+
 
 # ─── セキュリティヘッダテスト ───────────────────
 class TestSecurityHeaders:
@@ -732,3 +769,61 @@ class TestAdminSecretCheck:
         strong_secret = secrets.token_urlsafe(32)
         warnings = _check_admin_secret(strong_secret)
         assert len(warnings) == 0
+
+
+# ─── data:image プレフィックス回帰テスト ──────────────────
+class TestDataImagePrefix:
+    """ブラウザが送信する data:image/...;base64, プレフィックスの処理テスト。"""
+
+    @patch("app.detect_content")
+    def test_dataURIプレフィックス付きJPEGを正常処理する(self, mock_detect, client):
+        """data:image/jpeg;base64, プレフィックス付きの画像を受け入れること。"""
+        mock_detect.return_value = {
+            "ok": True, "data": [], "image_size": None,
+            "error_code": None, "message": None,
+        }
+        raw_b64 = create_valid_image_base64()
+        prefixed = f"data:image/jpeg;base64,{raw_b64}"
+        response = client.post("/api/analyze", json={
+            "image": prefixed,
+            "mode": "text",
+        })
+        assert response.status_code == 200
+        assert response.get_json()["ok"] is True
+
+    @patch("app.detect_content")
+    def test_dataURIプレフィックス付きPNGを正常処理する(self, mock_detect, client):
+        """data:image/png;base64, プレフィックス付きの画像を受け入れること。"""
+        mock_detect.return_value = {
+            "ok": True, "data": [], "image_size": None,
+            "error_code": None, "message": None,
+        }
+        raw_b64 = create_valid_png_base64()
+        prefixed = f"data:image/png;base64,{raw_b64}"
+        response = client.post("/api/analyze", json={
+            "image": prefixed,
+            "mode": "text",
+        })
+        assert response.status_code == 200
+        assert response.get_json()["ok"] is True
+
+
+# ─── 405エラーハンドラテスト ───────────────────────────
+class TestMethodNotAllowed:
+    """許可されていないHTTPメソッドのJSONレスポンステスト。"""
+
+    def test_GETでanalyzeにアクセスすると405を返す(self, client):
+        """GET /api/analyze は405+JSONレスポンスを返すこと。"""
+        response = client.get("/api/analyze")
+        assert response.status_code == 405
+        data = response.get_json()
+        assert data["ok"] is False
+        assert data["error_code"] == "METHOD_NOT_ALLOWED"
+
+    def test_PUTでanalyzeにアクセスすると405を返す(self, client):
+        """PUT /api/analyze は405+JSONレスポンスを返すこと。"""
+        response = client.put("/api/analyze", json={"image": "test"})
+        assert response.status_code == 405
+        data = response.get_json()
+        assert data["ok"] is False
+        assert data["error_code"] == "METHOD_NOT_ALLOWED"
