@@ -12,3 +12,6 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
+
+# SSL証明書（自己署名）
+certs/

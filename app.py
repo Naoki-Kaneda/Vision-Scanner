@@ -8,6 +8,7 @@ import base64
 import hashlib
 import logging
 import secrets
+import socket
 
 from flask import Flask, render_template, request, jsonify, g
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -289,7 +290,6 @@ def readyz():
 
     # オプション: Vision APIエンドポイントの到達性チェック
     if request.args.get("check_api", "").lower() == "true":
-        import socket
         try:
             socket.getaddrinfo("vision.googleapis.com", 443, socket.AF_UNSPEC, socket.SOCK_STREAM)
             checks["api_reachable"] = True
@@ -466,4 +466,11 @@ def analyze_endpoint():
 
 
 if __name__ == "__main__":
-    app.run(debug=FLASK_DEBUG, port=5000)
+    ssl_cert = os.environ.get("SSL_CERT_PATH")
+    ssl_key = os.environ.get("SSL_KEY_PATH")
+    if ssl_cert and ssl_key:
+        logger.info("HTTPS モードで起動 (証明書: %s)", ssl_cert)
+        app.run(debug=FLASK_DEBUG, host="0.0.0.0", port=5000,
+                ssl_context=(ssl_cert, ssl_key))
+    else:
+        app.run(debug=FLASK_DEBUG, port=5000)
