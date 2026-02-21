@@ -16,7 +16,8 @@ const JPEG_QUALITY = 0.95;           // キャプチャ画質
 const MIN_RESULT_LENGTH = 5;         // 結果フィルター: 最小文字数
 const LABEL_MAX_LENGTH = 25;         // バウンディングボックスのラベル最大文字数
 const RETRY_DELAY_MS = 5000;         // エラー後の再試行待機時間（ミリ秒）
-const CAPTURE_RESET_DELAY_MS = 1500; // 撮影完了後のバーリセット遅延（ミリ秒）
+const CAPTURE_RESET_DELAY_MS = 1500;       // 撮影完了後のバーリセット遅延（ミリ秒）
+const LABEL_CAPTURE_RESET_DELAY_MS = 5000; // ラベルモード: 次のスキャンまでの待機（ミリ秒）
 // true にするとクライアント側でも日次上限を強制。既定は false（サーバー側429に委譲）
 const ENFORCE_CLIENT_DAILY_LIMIT = false;
 const FETCH_TIMEOUT_MS = 10000;      // fetch タイムアウト（ミリ秒）
@@ -500,7 +501,11 @@ function checkStabilityAndCapture() {
                 captureAndAnalyze();
                 stabilityCounter = 0;
 
-                // 短い遅延後にバーをリセット
+                // モードに応じた遅延後にバーをリセット
+                // ラベルモード: 結果確認＋品物入替の時間を確保（5秒）
+                const resetDelay = currentMode === 'label'
+                    ? LABEL_CAPTURE_RESET_DELAY_MS
+                    : CAPTURE_RESET_DELAY_MS;
                 setTimeout(() => {
                     if (isScanning) {
                         lastStabilityState = 'idle';
@@ -510,7 +515,7 @@ function checkStabilityAndCapture() {
                         }
                         if (statusText) statusText.textContent = 'スキャン中';
                     }
-                }, CAPTURE_RESET_DELAY_MS);
+                }, resetDelay);
             }
         } else {
             // 動きを検出 → カウンターリセット
