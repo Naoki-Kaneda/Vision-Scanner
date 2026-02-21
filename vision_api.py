@@ -178,14 +178,17 @@ def detect_content(image_b64, mode="text", request_id=""):
 
     Args:
         image_b64: Base64エンコードされた画像文字列。
-        mode: 'text'（テキスト抽出）または 'object'（物体検出）。
+        mode: 'text'（テキスト抽出）、'object'（物体検出）、
+              または 'label'（ラベル有無判定：テキスト＋物体検出の併用）。
         request_id: リクエスト相関ID（ログ追跡用、省略可）。
 
     Returns:
         dict: {
             "ok": bool,
             "data": list[dict],  # [{"label": str, "bounds": [[x,y],...]}, ...]
-            "image_size": [w, h] | None,  # テキストモードのみ（ピクセル座標の基準）
+            "image_size": [w, h] | None,  # テキスト/ラベルモードのみ（ピクセル座標の基準）
+            "label_detected": bool,  # ラベルモードのみ
+            "label_reason": str,     # ラベルモードのみ（判定理由）
             "error_code": str|None,
             "message": str|None,
         }

@@ -32,7 +32,7 @@ let video, canvas, ctx, overlayCanvas, overlayCtx;
 let resultList, btnScan, statusDot, statusText;
 let videoContainer, stabilityBarContainer, stabilityBarFill;
 let btnProxy, apiCounter, cameraSelector;
-let btnCamera, btnFile, modeText, modeObject, modeLabel;
+let btnCamera, btnFile, btnFlipCam, modeText, modeObject, modeLabel;
 
 // ─── アプリケーション状態 ──────────────────────────
 let isScanning = false;
@@ -44,7 +44,6 @@ let retryTimerId = null;      // 再試行用タイマーID
 let isAnalyzing = false;      // API呼び出し中フラグ（並行呼び出し防止）
 let apiCallCount = 0;
 let videoDevices = [];
-let currentDeviceIndex = 0;
 let currentFacingMode = 'environment';  // 'environment'=外カメ, 'user'=インカメ
 let lastFrameData = null;
 let stabilityCounter = 0;
@@ -229,9 +228,6 @@ async function setupCamera(deviceId = null) {
             const settings = activeTrack.getSettings();
             if (settings.deviceId) {
                 cameraSelector.value = settings.deviceId;
-                // currentDeviceIndex を同期
-                currentDeviceIndex = videoDevices.findIndex(d => d.deviceId === settings.deviceId);
-                if (currentDeviceIndex < 0) currentDeviceIndex = 0;
             }
         }
 
@@ -293,9 +289,8 @@ function toggleFacingMode() {
 
 /** カメラ反転ボタンのラベルを現在の向きに合わせて更新する。 */
 function updateFlipButton() {
-    const btnFlip = document.getElementById('btn-flip-cam');
-    if (!btnFlip) return;
-    btnFlip.textContent = currentFacingMode === 'environment'
+    if (!btnFlipCam) return;
+    btnFlipCam.textContent = currentFacingMode === 'environment'
         ? '⟳ 外カメ'
         : '⟳ インカメ';
 }
@@ -306,12 +301,11 @@ function updateFlipButton() {
  * 片方しかない場合（PCなど）はボタンを非表示にする。
  */
 function updateFlipButtonVisibility() {
-    const btnFlip = document.getElementById('btn-flip-cam');
-    if (!btnFlip) return;
+    if (!btnFlipCam) return;
 
     // カメラが1台以下なら切替不要
     if (videoDevices.length < 2) {
-        btnFlip.classList.add('hidden');
+        btnFlipCam.classList.add('hidden');
         return;
     }
 
@@ -353,9 +347,9 @@ function updateFlipButtonVisibility() {
 
     // 前面・背面の両方が確認できた場合のみボタンを表示
     if (hasFront && hasBack) {
-        btnFlip.classList.remove('hidden');
+        btnFlipCam.classList.remove('hidden');
     } else {
-        btnFlip.classList.add('hidden');
+        btnFlipCam.classList.add('hidden');
     }
 }
 
@@ -789,7 +783,7 @@ function addResultItem(item) {
 function addLabelResult(detected, reason) {
     const timeStr = new Date().toLocaleTimeString();
     const status = detected ? 'ok' : 'ng';
-    const statusText = detected ? 'OK' : 'NG';
+    const labelText = detected ? 'OK' : 'NG';
 
     // プレースホルダーを除去
     const placeholder = document.querySelector('.placeholder-text');
@@ -801,7 +795,7 @@ function addLabelResult(detected, reason) {
 
     const badge = document.createElement('span');
     badge.className = `label-badge ${status}`;
-    badge.textContent = statusText;
+    badge.textContent = labelText;
 
     const detail = document.createElement('div');
     detail.className = 'label-detail';
@@ -882,6 +876,7 @@ function init() {
     cameraSelector = document.getElementById('camera-selector');
     btnCamera = document.getElementById('btn-camera');
     btnFile = document.getElementById('btn-file');
+    btnFlipCam = document.getElementById('btn-flip-cam');
     modeText = document.getElementById('mode-text');
     modeObject = document.getElementById('mode-object');
     modeLabel = document.getElementById('mode-label');
@@ -919,7 +914,6 @@ function init() {
     if (cameraSelector) cameraSelector.addEventListener('change', (e) => switchCameraDevice(e.target.value));
     if (btnFile && fileInput) btnFile.addEventListener('click', () => fileInput.click());
     if (fileInput) fileInput.addEventListener('change', handleFileUpload);
-    const btnFlipCam = document.getElementById('btn-flip-cam');
     if (btnFlipCam) btnFlipCam.addEventListener('click', toggleFacingMode);
     if (btnMirror) btnMirror.addEventListener('click', toggleMirror);
     if (modeText) modeText.addEventListener('click', () => setMode('text'));
