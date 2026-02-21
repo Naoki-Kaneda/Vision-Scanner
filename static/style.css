@@ -401,6 +401,44 @@ video {
     background: rgba(188, 199, 220, 0.08);
 }
 
+/* ─── MD3 カメラ選択ドロップダウン ──────────── */
+.control-select {
+    background: var(--md-surface-container-high);
+    border: 1px solid var(--md-outline);
+    color: var(--md-on-surface);
+    padding: 6px 12px;
+    border-radius: var(--md-shape-corner-full);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: all var(--md-motion-standard);
+    max-width: 200px;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23918F9A' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 28px;
+}
+
+.control-select:hover {
+    background-color: var(--md-surface-container-highest);
+    border-color: var(--md-primary);
+}
+
+.control-select:focus {
+    outline: none;
+    border-color: var(--md-primary);
+    box-shadow: 0 0 0 2px rgba(168, 199, 250, 0.2);
+}
+
+.control-select option {
+    background: var(--md-surface-container-high);
+    color: var(--md-on-surface);
+    padding: 8px;
+}
+
 /* ─── MD3 Filled Button（スタート/ストップ） ─── */
 .primary-btn {
     width: 100%;

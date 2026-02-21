@@ -30,7 +30,7 @@ function fetchSignal(ms = FETCH_TIMEOUT_MS) {
 let video, canvas, ctx, overlayCanvas, overlayCtx;
 let resultList, btnScan, statusDot, statusText;
 let videoContainer, stabilityBarContainer, stabilityBarFill;
-let btnProxy, apiCounter, btnSwitchCam;
+let btnProxy, apiCounter, cameraSelector;
 let btnCamera, btnFile, modeText, modeObject;
 
 // ─── アプリケーション状態 ──────────────────────────
@@ -187,33 +187,26 @@ function stopCameraStream() {
     }
 }
 
-/** カメラを初期化してHD映像を取得する。 */
-async function setupCamera() {
+/**
+ * カメラを初期化してHD映像を取得する。
+ * deviceId が指定されていればそのカメラを、未指定なら背面カメラ（environment）を優先する。
+ * @param {string|null} deviceId - 使用するカメラのデバイスID（nullで自動選択）
+ */
+async function setupCamera(deviceId = null) {
     try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        videoDevices = devices.filter(d => d.kind === 'videoinput');
-
-        // カメラが2台以上あれば切り替えボタンを表示
-        if (videoDevices.length > 1) {
-            btnSwitchCam.classList.remove('hidden');
-        }
-
-        // deviceId が空文字の場合（権限未付与）は exact を使わない
-        const targetId = videoDevices[currentDeviceIndex]?.deviceId;
+        // カメラ権限を取得するため、まずストリームを開く
         const constraints = {
-            video: {
-                deviceId: targetId ? { exact: targetId } : undefined,
-                width: { ideal: CAMERA_WIDTH },
-                height: { ideal: CAMERA_HEIGHT },
-            },
+            video: deviceId
+                ? { deviceId: { exact: deviceId }, width: { ideal: CAMERA_WIDTH }, height: { ideal: CAMERA_HEIGHT } }
+                : { facingMode: { ideal: 'environment' }, width: { ideal: CAMERA_WIDTH }, height: { ideal: CAMERA_HEIGHT } },
         };
 
         let stream;
         try {
             stream = await navigator.mediaDevices.getUserMedia(constraints);
         } catch (constraintErr) {
-            // exact deviceId で失敗した場合、deviceId なしでリトライ
-            console.warn('指定デバイスでの取得に失敗、フォールバック:', constraintErr.name);
+            // 指定カメラや背面カメラで失敗した場合、制約なしでリトライ
+            console.warn('指定条件でのカメラ取得に失敗、フォールバック:', constraintErr.name);
             stream = await navigator.mediaDevices.getUserMedia({
                 video: { width: { ideal: CAMERA_WIDTH }, height: { ideal: CAMERA_HEIGHT } },
             });
@@ -224,11 +217,19 @@ async function setupCamera() {
         currentSource = 'camera';
         updateSourceButtons();
 
-        // 権限付与後にデバイスリストを更新（deviceId が取得可能になる）
-        const updated = await navigator.mediaDevices.enumerateDevices();
-        videoDevices = updated.filter(d => d.kind === 'videoinput');
-        if (videoDevices.length > 1) {
-            btnSwitchCam.classList.remove('hidden');
+        // 権限付与後にデバイスリストを更新（labelが取得可能になる）
+        await populateCameraSelector();
+
+        // 現在使用中のカメラをドロップダウンで選択状態にする
+        const activeTrack = stream.getVideoTracks()[0];
+        if (activeTrack && cameraSelector) {
+            const settings = activeTrack.getSettings();
+            if (settings.deviceId) {
+                cameraSelector.value = settings.deviceId;
+                // currentDeviceIndex を同期
+                currentDeviceIndex = videoDevices.findIndex(d => d.deviceId === settings.deviceId);
+                if (currentDeviceIndex < 0) currentDeviceIndex = 0;
+            }
         }
     } catch (err) {
         console.error('カメラアクセスエラー:', err);
@@ -236,12 +237,40 @@ async function setupCamera() {
     }
 }
 
-/** カメラデバイスを切り替える。 */
-function toggleCameraDevice() {
-    if (videoDevices.length < 2) return;
+/**
+ * カメラ選択ドロップダウンにデバイス一覧を表示する。
+ * カメラが2台以上あればドロップダウンを表示、1台以下なら非表示。
+ */
+async function populateCameraSelector() {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+    if (!cameraSelector) return;
+
+    // 既存の選択肢をクリア
+    while (cameraSelector.firstChild) {
+        cameraSelector.removeChild(cameraSelector.firstChild);
+    }
+
+    if (videoDevices.length > 1) {
+        cameraSelector.classList.remove('hidden');
+
+        videoDevices.forEach((device, index) => {
+            const option = document.createElement('option');
+            option.value = device.deviceId;
+            // ラベルがない場合（権限未付与時など）は番号で表示
+            option.textContent = device.label || `カメラ ${index + 1}`;
+            cameraSelector.appendChild(option);
+        });
+    } else {
+        cameraSelector.classList.add('hidden');
+    }
+}
+
+/** ドロップダウンで選択されたカメラに切り替える。 */
+function switchCameraDevice(deviceId) {
     stopCameraStream();
-    currentDeviceIndex = (currentDeviceIndex + 1) % videoDevices.length;
-    setupCamera();
+    setupCamera(deviceId);
 }
 
 /** 動画ファイルをアップロードして再生する。 */
@@ -710,7 +739,7 @@ function init() {
     stabilityBarFill = document.getElementById('stability-bar-fill');
     btnProxy = document.getElementById('btn-proxy');
     apiCounter = document.getElementById('api-counter');
-    btnSwitchCam = document.getElementById('btn-switch-cam');
+    cameraSelector = document.getElementById('camera-selector');
     btnCamera = document.getElementById('btn-camera');
     btnFile = document.getElementById('btn-file');
     modeText = document.getElementById('mode-text');
@@ -746,7 +775,7 @@ function init() {
 
     // ─── イベントリスナー登録（全要素にnullガード付き） ──
     if (btnCamera) btnCamera.addEventListener('click', () => switchSource('camera'));
-    if (btnSwitchCam) btnSwitchCam.addEventListener('click', toggleCameraDevice);
+    if (cameraSelector) cameraSelector.addEventListener('change', (e) => switchCameraDevice(e.target.value));
     if (btnFile && fileInput) btnFile.addEventListener('click', () => fileInput.click());
     if (fileInput) fileInput.addEventListener('change', handleFileUpload);
     if (btnMirror) btnMirror.addEventListener('click', toggleMirror);
