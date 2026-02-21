@@ -68,6 +68,110 @@ class TestObjectDetection:
         assert data["data"][0]["label"] == "Person（人）- 95%"
 
 
+# ─── 新モードのスモークテスト ────────────────────────
+class TestNewModes:
+    """face/logo/classify/web/label の各モードがAPIエンドポイントで受け入れられること。"""
+
+    @patch("app.detect_content")
+    def test_顔検出モードを受け入れる(self, mock_detect, client):
+        """mode=faceで正常レスポンスを返すこと。"""
+        mock_detect.return_value = {
+            "ok": True,
+            "data": [{"label": "顔1: 喜び=高い", "bounds": [[0.1, 0.1], [0.4, 0.1], [0.4, 0.5], [0.1, 0.5]]}],
+            "image_size": [640, 480],
+            "error_code": None,
+            "message": None,
+        }
+        response = client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "face",
+        })
+        assert response.status_code == 200
+        assert response.get_json()["ok"] is True
+
+    @patch("app.detect_content")
+    def test_ロゴ検出モードを受け入れる(self, mock_detect, client):
+        """mode=logoで正常レスポンスを返すこと。"""
+        mock_detect.return_value = {
+            "ok": True,
+            "data": [{"label": "Google - 92%", "bounds": [[0.2, 0.3], [0.6, 0.3], [0.6, 0.5], [0.2, 0.5]]}],
+            "image_size": [640, 480],
+            "error_code": None,
+            "message": None,
+        }
+        response = client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "logo",
+        })
+        assert response.status_code == 200
+        assert response.get_json()["ok"] is True
+
+    @patch("app.detect_content")
+    def test_分類モードを受け入れる(self, mock_detect, client):
+        """mode=classifyで正常レスポンスを返すこと。"""
+        mock_detect.return_value = {
+            "ok": True,
+            "data": [{"label": "電子機器 - 95%"}, {"label": "ガジェット - 88%"}],
+            "image_size": None,
+            "error_code": None,
+            "message": None,
+        }
+        response = client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "classify",
+        })
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["ok"] is True
+        assert len(data["data"]) == 2
+
+    @patch("app.detect_content")
+    def test_Web検索モードを受け入れる(self, mock_detect, client):
+        """mode=webで正常レスポンスを返すこと（web_detailフィールドも含む）。"""
+        mock_detect.return_value = {
+            "ok": True,
+            "data": [{"label": "ノートPC"}],
+            "image_size": None,
+            "error_code": None,
+            "message": None,
+            "web_detail": {
+                "best_guess": "MacBook Pro",
+                "entities": [{"name": "Laptop", "score": 0.9}],
+                "pages": [],
+                "similar_images": [],
+            },
+        }
+        response = client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "web",
+        })
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["ok"] is True
+        assert "web_detail" in data
+
+    @patch("app.detect_content")
+    def test_ラベル検出モードを受け入れる(self, mock_detect, client):
+        """mode=labelで正常レスポンスを返すこと（label_detectedフィールドも含む）。"""
+        mock_detect.return_value = {
+            "ok": True,
+            "data": [{"label": "ラベルあり"}],
+            "image_size": None,
+            "error_code": None,
+            "message": None,
+            "label_detected": True,
+            "label_reason": "テキスト検出済み",
+        }
+        response = client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "label",
+        })
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["ok"] is True
+        assert data["label_detected"] is True
+
+
 # ─── 不正入力テスト ──────────────────────────────
 class TestInvalidInput:
     """不正な入力に対するバリデーションテスト。"""

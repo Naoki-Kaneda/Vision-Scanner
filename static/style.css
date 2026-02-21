@@ -35,6 +35,11 @@
     --md-shape-corner-l: 16px;
     --md-shape-corner-xl: 28px;
     --md-shape-corner-full: 9999px;
+    /* ターゲットボックス寸法（JS側と共有する信頼できる唯一の定義） */
+    --target-box-left: 20%;
+    --target-box-width: 60%;
+    --target-box-top: 10%;
+    --target-box-height: 58%;
 }
 
 /* ─── リセット ──────────────────────────────── */
@@ -258,10 +263,10 @@ video {
 /* ─── ターゲットボックス ─────────────────────── */
 .target-box {
     position: absolute;
-    top: 10%;
-    left: 20%;
-    width: 60%;
-    height: 58%;
+    top: var(--target-box-top);
+    left: var(--target-box-left);
+    width: var(--target-box-width);
+    height: var(--target-box-height);
     border: 2px dashed rgba(168, 199, 250, 0.5);
     border-radius: var(--md-shape-corner-m);
     pointer-events: none;

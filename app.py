@@ -90,15 +90,21 @@ _static_hash_cache = {}
 
 
 def _static_file_hash(filename):
-    """静的ファイルのMD5ハッシュ先頭8文字を返す（キャッシュバスティング用）。"""
+    """静的ファイルのMD5ハッシュ先頭8文字を返す（キャッシュバスティング用）。
+
+    filename単位でキャッシュし、mtimeが変わったら上書きする。
+    従来は filename:mtime をキーにしていたため更新のたびに辞書が肥大していた。
+    """
     filepath = os.path.join(app.static_folder, filename)
     try:
         mtime = os.path.getmtime(filepath)
-        cache_key = f"{filename}:{mtime}"
-        if cache_key not in _static_hash_cache:
-            with open(filepath, "rb") as f:
-                _static_hash_cache[cache_key] = hashlib.md5(f.read()).hexdigest()[:8]
-        return _static_hash_cache[cache_key]
+        cached = _static_hash_cache.get(filename)
+        if cached and cached[0] == mtime:
+            return cached[1]
+        with open(filepath, "rb") as f:
+            digest = hashlib.md5(f.read()).hexdigest()[:8]
+        _static_hash_cache[filename] = (mtime, digest)
+        return digest
     except OSError:
         return "0"
 
