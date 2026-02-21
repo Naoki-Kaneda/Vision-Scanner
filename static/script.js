@@ -128,6 +128,7 @@ async function loadProxyConfig() {
         }
     } catch (err) {
         console.error('プロキシ設定取得エラー:', err);
+        if (btnProxy) btnProxy.title = '設定取得に失敗しました';
     }
 }
 
@@ -158,6 +159,7 @@ async function loadRateLimits() {
         }
     } catch (err) {
         console.error('レート制限設定取得エラー:', err);
+        if (apiCounter) apiCounter.title = '設定取得に失敗しました';
     }
 }
 
@@ -246,7 +248,10 @@ async function setupCamera(deviceId = null) {
         }
 
         video.srcObject = stream;
-        await video.play().catch(() => {});
+        await video.play().catch((err) => {
+            console.warn('映像再生の開始に失敗:', err.name);
+            if (statusText) statusText.textContent = '⚠ カメラ映像の再生に失敗しました';
+        });
         currentSource = 'camera';
         updateSourceButtons();
 
@@ -539,8 +544,10 @@ function checkStabilityAndCapture() {
                 const resetDelay = ['label', 'web'].includes(currentMode)
                     ? LABEL_CAPTURE_RESET_DELAY_MS
                     : CAPTURE_RESET_DELAY_MS;
+                const capturedMode = currentMode;
                 setTimeout(() => {
-                    if (isScanning) {
+                    // モード変更された場合はリセットをスキップ（新モードの状態を壊さない）
+                    if (isScanning && currentMode === capturedMode) {
                         lastStabilityState = 'idle';
                         if (stabilityBarFill) {
                             stabilityBarFill.style.width = '0%';
@@ -1215,6 +1222,12 @@ function init() {
             if (!helpPopup.classList.contains('hidden')
                 && !helpPopup.contains(e.target)
                 && e.target !== btnHelp) {
+                helpPopup.classList.add('hidden');
+            }
+        });
+        // Escキーで閉じる
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !helpPopup.classList.contains('hidden')) {
                 helpPopup.classList.add('hidden');
             }
         });

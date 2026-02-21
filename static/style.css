@@ -59,11 +59,16 @@ body {
     font-family: 'Inter', 'Noto Sans JP', sans-serif;
     background-color: var(--md-surface);
     color: var(--md-on-surface);
+    height: 100dvh;  /* モバイルブラウザのUIバー考慮（フォールバック: 100vh） */
     height: 100vh;
     overflow: hidden;
     display: flex;
     justify-content: center;
     align-items: center;
+}
+
+@supports (height: 100dvh) {
+    body { height: 100dvh; }
 }
 
 .container {
