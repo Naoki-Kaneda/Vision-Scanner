@@ -148,11 +148,16 @@ class TestNewModes:
         assert response.status_code == 200
         data = response.get_json()
         assert data["ok"] is True
+        # web_detail の必須キー4つが存在すること（レスポンス契約）
         assert "web_detail" in data
+        wd = data["web_detail"]
+        for key in ("best_guess", "entities", "pages", "similar_images"):
+            assert key in wd, f"web_detail に必須キー '{key}' がありません"
+        assert wd["best_guess"] == "MacBook Pro"
 
     @patch("app.detect_content")
     def test_ラベル検出モードを受け入れる(self, mock_detect, client):
-        """mode=labelで正常レスポンスを返すこと（label_detectedフィールドも含む）。"""
+        """mode=labelで正常レスポンスを返すこと（label_detected/label_reasonが必須）。"""
         mock_detect.return_value = {
             "ok": True,
             "data": [{"label": "ラベルあり"}],
@@ -169,7 +174,12 @@ class TestNewModes:
         assert response.status_code == 200
         data = response.get_json()
         assert data["ok"] is True
+        # label_detected と label_reason の両方が必須（レスポンス契約）
+        assert "label_detected" in data, "label_detected フィールドがありません"
+        assert "label_reason" in data, "label_reason フィールドがありません"
         assert data["label_detected"] is True
+        assert isinstance(data["label_reason"], str)
+        assert len(data["label_reason"]) > 0
 
 
 # ─── 不正入力テスト ──────────────────────────────

@@ -81,6 +81,11 @@ LABEL_OBJECT_KEYWORDS = {
 LANGUAGE_HINTS = ["en", "ja"]  # OCR言語ヒント（優先順）
 API_TIMEOUT_SECONDS = 15       # APIリクエストタイムアウト（秒）
 
+# ─── エラーコード定数（タイポ防止） ─────────────────────
+ERR_TIMEOUT = "TIMEOUT"
+ERR_CONNECTION_ERROR = "CONNECTION_ERROR"
+ERR_REQUEST_ERROR = "REQUEST_ERROR"
+
 # ─── 画像前処理パラメータ ───────────────────────────
 MAX_IMAGE_PIXELS = 20_000_000  # 最大ピクセル数（約80MB RAM相当）
 CONTRAST_FACTOR = 1.5          # コントラスト強調係数
@@ -102,7 +107,7 @@ retry_strategy = Retry(
     total=3,
     connect=3,
     backoff_factor=0.5,
-    status_forcelist=[429, 500, 502, 503],
+    status_forcelist=[429, 500, 502, 503, 504],
     allowed_methods=["POST"],
 )
 adapter = HTTPAdapter(max_retries=retry_strategy)
@@ -353,13 +358,13 @@ def detect_content(image_b64, mode="text", request_id=""):
 
     except requests.exceptions.Timeout:
         logger.error("[%s] Vision API タイムアウト", request_id)
-        return {"ok": False, "data": [], "image_size": None, "error_code": "TIMEOUT", "message": "APIリクエストがタイムアウトしました"}
+        return {"ok": False, "data": [], "image_size": None, "error_code": ERR_TIMEOUT, "message": "APIリクエストがタイムアウトしました"}
     except requests.exceptions.ConnectionError as e:
         logger.error("[%s] Vision API 接続エラー: %s", request_id, e)
-        return {"ok": False, "data": [], "image_size": None, "error_code": "CONNECTION_ERROR", "message": "API接続に失敗しました"}
+        return {"ok": False, "data": [], "image_size": None, "error_code": ERR_CONNECTION_ERROR, "message": "API接続に失敗しました"}
     except requests.exceptions.RequestException as e:
         logger.error("[%s] Vision API通信エラー: %s", request_id, e)
-        return {"ok": False, "data": [], "image_size": None, "error_code": "REQUEST_ERROR", "message": str(e)}
+        return {"ok": False, "data": [], "image_size": None, "error_code": ERR_REQUEST_ERROR, "message": str(e)}
 
 
 # ─── レスポンス解析（内部関数） ──────────────────────

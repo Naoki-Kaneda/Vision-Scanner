@@ -35,6 +35,21 @@ MAX_IMAGE_SIZE = 5 * 1024 * 1024          # 5MB（Base64デコード後）
 MAX_REQUEST_BODY = 10 * 1024 * 1024       # 10MB（Base64 + JSONオーバーヘッド）
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")  # 管理API認証用シークレット
 
+# ─── エラーコード定数（タイポ防止） ────────────────────
+ERR_INVALID_FORMAT = "INVALID_FORMAT"
+ERR_MISSING_IMAGE = "MISSING_IMAGE"
+ERR_INVALID_MODE = "INVALID_MODE"
+ERR_INVALID_BASE64 = "INVALID_BASE64"
+ERR_IMAGE_TOO_LARGE = "IMAGE_TOO_LARGE"
+ERR_INVALID_IMAGE_FORMAT = "INVALID_IMAGE_FORMAT"
+ERR_RATE_LIMITED = "RATE_LIMITED"
+ERR_VALIDATION_ERROR = "VALIDATION_ERROR"
+ERR_SERVER_ERROR = "SERVER_ERROR"
+ERR_REQUEST_TOO_LARGE = "REQUEST_TOO_LARGE"
+ERR_BAD_REQUEST = "BAD_REQUEST"
+ERR_UNAUTHORIZED = "UNAUTHORIZED"
+ERR_INVALID_TYPE = "INVALID_TYPE"
+
 # 起動時セキュリティチェック
 def _check_admin_secret(secret):
     """ADMIN_SECRETの強度を検証し、警告メッセージのリストを返す。"""
@@ -179,7 +194,7 @@ def handle_request_too_large(_e):
     return jsonify({
         "ok": False,
         "data": [],
-        "error_code": "REQUEST_TOO_LARGE",
+        "error_code": ERR_REQUEST_TOO_LARGE,
         "message": f"リクエストサイズが上限({MAX_REQUEST_BODY // (1024*1024)}MB)を超えています",
     }), 413
 
@@ -190,7 +205,7 @@ def handle_bad_request(_e):
     return jsonify({
         "ok": False,
         "data": [],
-        "error_code": "BAD_REQUEST",
+        "error_code": ERR_BAD_REQUEST,
         "message": "不正なリクエストです",
     }), 400
 
@@ -291,14 +306,14 @@ def update_proxy_config():
     """プロキシ設定を更新する（認証必須）"""
     auth_header = request.headers.get("X-Admin-Secret", "")
     if not ADMIN_SECRET or auth_header != ADMIN_SECRET:
-        return _error_response("UNAUTHORIZED", "管理APIへのアクセス権がありません", 403)
+        return _error_response(ERR_UNAUTHORIZED, "管理APIへのアクセス権がありません", 403)
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or "enabled" not in data:
-        return _error_response("INVALID_FORMAT", "enabledフィールドを含むJSONオブジェクトが必要です")
+        return _error_response(ERR_INVALID_FORMAT, "enabledフィールドを含むJSONオブジェクトが必要です")
 
     if not isinstance(data["enabled"], bool):
-        return _error_response("INVALID_TYPE", "enabledフィールドはboolean型(true/false)である必要があります")
+        return _error_response(ERR_INVALID_TYPE, "enabledフィールドはboolean型(true/false)である必要があります")
 
     new_status = set_proxy_enabled(data["enabled"])
     return jsonify({"ok": True, "status": new_status})
@@ -313,22 +328,22 @@ def _validate_analyze_request():
                (None, None, error_response) 失敗時
     """
     if not request.is_json:
-        return None, None, _error_response("INVALID_FORMAT", "リクエストはJSON形式である必要があります")
+        return None, None, _error_response(ERR_INVALID_FORMAT, "リクエストはJSON形式である必要があります")
 
     data = request.get_json(silent=True)
     if data is None:
-        return None, None, _error_response("INVALID_FORMAT", "JSONのパースに失敗しました")
+        return None, None, _error_response(ERR_INVALID_FORMAT, "JSONのパースに失敗しました")
 
     if not isinstance(data, dict):
-        return None, None, _error_response("INVALID_FORMAT", "リクエストボディはJSONオブジェクトである必要があります")
+        return None, None, _error_response(ERR_INVALID_FORMAT, "リクエストボディはJSONオブジェクトである必要があります")
 
     image_data = data.get("image")
     if not image_data or not isinstance(image_data, str) or not image_data.strip():
-        return None, None, _error_response("MISSING_IMAGE", "画像データがありません")
+        return None, None, _error_response(ERR_MISSING_IMAGE, "画像データがありません")
 
     mode = data.get("mode", "text")
     if mode not in VALID_MODES:
-        return None, None, _error_response("INVALID_MODE", f"不正なモード: '{mode}'。許可値: {list(VALID_MODES)}")
+        return None, None, _error_response(ERR_INVALID_MODE, f"不正なモード: '{mode}'。許可値: {list(VALID_MODES)}")
 
     # data:image/jpeg;base64, プレフィックスを除去
     if "," in image_data:
@@ -339,17 +354,17 @@ def _validate_analyze_request():
         decoded = base64.b64decode(image_data, validate=True)
         if len(decoded) > MAX_IMAGE_SIZE:
             return None, None, _error_response(
-                "IMAGE_TOO_LARGE",
+                ERR_IMAGE_TOO_LARGE,
                 f"画像サイズが上限({MAX_IMAGE_SIZE // (1024*1024)}MB)を超えています",
             )
         # MIME magic byte 検証（JPEG/PNGのみ許可）
         if not _validate_image_format(decoded):
             return None, None, _error_response(
-                "INVALID_IMAGE_FORMAT",
+                ERR_INVALID_IMAGE_FORMAT,
                 "許可されていない画像形式です（JPEG/PNGのみ対応）",
             )
     except Exception:
-        return None, None, _error_response("INVALID_BASE64", "画像データのBase64デコードに失敗しました")
+        return None, None, _error_response(ERR_INVALID_BASE64, "画像データのBase64デコードに失敗しました")
 
     return image_data, mode, None
 
@@ -379,7 +394,7 @@ def analyze_endpoint():
     limited, limit_message, request_id = try_consume_request(client_ip)
     if limited:
         _log("info", "rate_limited", ip=client_ip, reason=limit_message)
-        return _error_response("RATE_LIMITED", limit_message, 429)
+        return _error_response(ERR_RATE_LIMITED, limit_message, 429)
 
     # ─── Vision API呼び出し ─────────────
     try:
@@ -397,12 +412,12 @@ def analyze_endpoint():
     except ValueError as e:
         release_request(client_ip, request_id)
         _log("warning", "validation_error", ip=client_ip, error=str(e))
-        return _error_response("VALIDATION_ERROR", str(e))
+        return _error_response(ERR_VALIDATION_ERROR, str(e))
 
     except Exception as e:
         release_request(client_ip, request_id)
         _log("error", "server_error", ip=client_ip, error=str(e))
-        return _error_response("SERVER_ERROR", "内部サーバーエラーが発生しました", 500)
+        return _error_response(ERR_SERVER_ERROR, "内部サーバーエラーが発生しました", 500)
 
 
 if __name__ == "__main__":

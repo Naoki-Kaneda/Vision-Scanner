@@ -1220,8 +1220,8 @@ function init() {
     setupCamera();
     updateMirrorState();
     loadApiUsage();
-    loadRateLimits();
-    loadProxyConfig();
+    // 初期設定を並列取得（片方が失敗しても他方に影響しない）
+    Promise.allSettled([loadRateLimits(), loadProxyConfig()]);
 }
 
 document.addEventListener('DOMContentLoaded', init);

@@ -114,3 +114,54 @@ class TestConfigEndpoints:
         text = badge.text_content()
         assert "Proxy設定:" in text
         assert ("ON" in text or "OFF" in text)
+
+
+class TestHelpUI:
+    """ヘルプポップアップの開閉・表示の回帰テスト。"""
+
+    def test_ヘルプボタンでポップアップが開閉する(self, page):
+        """?ボタンクリックでポップアップの表示/非表示が切り替わること。"""
+        btn_help = page.locator("#btn-help")
+        popup = page.locator("#help-popup")
+
+        # 初期状態: 非表示（hiddenクラス付き）
+        assert popup.get_attribute("class") is not None
+        assert "hidden" in popup.get_attribute("class")
+
+        # クリックで開く
+        btn_help.click()
+        assert "hidden" not in (popup.get_attribute("class") or "")
+
+        # もう一度クリックで閉じる
+        btn_help.click()
+        page.wait_for_timeout(200)
+        assert "hidden" in (popup.get_attribute("class") or "")
+
+    def test_閉じるボタンでポップアップが閉じる(self, page):
+        """ポップアップ内の×ボタンでポップアップが閉じること。"""
+        btn_help = page.locator("#btn-help")
+        popup = page.locator("#help-popup")
+        btn_close = page.locator("#btn-help-close")
+
+        # ポップアップを開く
+        btn_help.click()
+        assert "hidden" not in (popup.get_attribute("class") or "")
+
+        # ×ボタンで閉じる
+        btn_close.click()
+        page.wait_for_timeout(200)
+        assert "hidden" in (popup.get_attribute("class") or "")
+
+    def test_ポップアップ外クリックで閉じる(self, page):
+        """ポップアップ外の領域をクリックするとポップアップが閉じること。"""
+        btn_help = page.locator("#btn-help")
+        popup = page.locator("#help-popup")
+
+        # ポップアップを開く
+        btn_help.click()
+        assert "hidden" not in (popup.get_attribute("class") or "")
+
+        # ポップアップ外（ページ本体）をクリック
+        page.locator("h1").click()
+        page.wait_for_timeout(200)
+        assert "hidden" in (popup.get_attribute("class") or "")
