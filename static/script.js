@@ -233,6 +233,10 @@ async function setupCamera(deviceId = null) {
                 if (currentDeviceIndex < 0) currentDeviceIndex = 0;
             }
         }
+
+        // インカメ/外カメ切替ボタンの表示制御
+        // facingMode をサポートするカメラが前面・背面の両方あるときだけ表示
+        updateFlipButtonVisibility();
     } catch (err) {
         console.error('カメラアクセスエラー:', err);
         alert('カメラへのアクセスが拒否されたか、カメラが見つかりません。');
@@ -293,6 +297,65 @@ function updateFlipButton() {
     btnFlip.textContent = currentFacingMode === 'environment'
         ? '⟳ 外カメ'
         : '⟳ インカメ';
+}
+
+/**
+ * インカメ/外カメ切替ボタンの表示を制御する。
+ * デバイスラベルから前面・背面カメラの両方が存在するか判定し、
+ * 片方しかない場合（PCなど）はボタンを非表示にする。
+ */
+function updateFlipButtonVisibility() {
+    const btnFlip = document.getElementById('btn-flip-cam');
+    if (!btnFlip) return;
+
+    // カメラが1台以下なら切替不要
+    if (videoDevices.length < 2) {
+        btnFlip.classList.add('hidden');
+        return;
+    }
+
+    // 各カメラの facingMode を取得して前面・背面が両方あるか確認
+    // getCapabilities() が使えるブラウザでは正確に判定できる
+    let hasFront = false;
+    let hasBack = false;
+
+    // 現在のストリームのトラックから判定を試みる
+    if (video.srcObject) {
+        const tracks = video.srcObject.getVideoTracks();
+        for (const track of tracks) {
+            if (typeof track.getCapabilities === 'function') {
+                const caps = track.getCapabilities();
+                if (caps.facingMode && caps.facingMode.length > 0) {
+                    // facingMode をサポートするカメラがある → モバイルデバイスの可能性大
+                    hasFront = true;
+                    hasBack = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    // getCapabilities で判定できなかった場合、ラベルから推定
+    if (!hasFront && !hasBack) {
+        for (const device of videoDevices) {
+            const label = (device.label || '').toLowerCase();
+            if (label.includes('front') || label.includes('user') || label.includes('facing front')
+                || label.includes('前面') || label.includes('インカメ')) {
+                hasFront = true;
+            }
+            if (label.includes('back') || label.includes('rear') || label.includes('environment')
+                || label.includes('facing back') || label.includes('背面') || label.includes('外')) {
+                hasBack = true;
+            }
+        }
+    }
+
+    // 前面・背面の両方が確認できた場合のみボタンを表示
+    if (hasFront && hasBack) {
+        btnFlip.classList.remove('hidden');
+    } else {
+        btnFlip.classList.add('hidden');
+    }
 }
 
 /** 動画ファイルをアップロードして再生する。 */
