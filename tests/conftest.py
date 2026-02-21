@@ -70,10 +70,11 @@ def make_b64(data=b"\xff\xd8\xff\xd9"):
     return base64.b64encode(data).decode()
 
 
-def make_mock_response(status_code=200, json_data=None):
+def make_mock_response(status_code=200, json_data=None, content_type="application/json"):
     """requests.Responseのモックを作成する。"""
     mock = MagicMock()
     mock.status_code = status_code
     mock.json.return_value = json_data or {}
     mock.text = str(json_data)
+    mock.headers = {"Content-Type": content_type}
     return mock

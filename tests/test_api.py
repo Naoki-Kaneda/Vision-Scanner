@@ -661,6 +661,35 @@ class TestCors:
         assert response.status_code == 204
         assert "Access-Control-Allow-Origin" not in response.headers
 
+    @patch("app.ALLOWED_ORIGINS", ["https://trusted.example.com"])
+    def test_プリフライトがAccess_Control_Request_Headersを受け入れる(self, client):
+        """プリフライトでContent-Type要求ヘッダーを送ってもCORSが通ること。"""
+        response = client.options(
+            "/api/analyze",
+            headers={
+                "Origin": "https://trusted.example.com",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "Content-Type",
+            },
+        )
+        assert response.status_code == 204
+        assert response.headers.get("Access-Control-Allow-Origin") == "https://trusted.example.com"
+        assert "Content-Type" in response.headers.get("Access-Control-Allow-Headers", "")
+
+    @patch("app.ALLOWED_ORIGINS", ["https://trusted.example.com"])
+    def test_許可されていないOriginのプリフライトにCORSヘッダーが付かない(self, client):
+        """許可外OriginのOPTIONSは204を返すがCORSヘッダーは付与しないこと。"""
+        response = client.options(
+            "/api/analyze",
+            headers={
+                "Origin": "https://evil.example.com",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "Content-Type",
+            },
+        )
+        assert response.status_code == 204
+        assert "Access-Control-Allow-Origin" not in response.headers
+
 
 # ─── レート制限設定API テスト ───────────────────────────
 class TestRateLimitsConfig:

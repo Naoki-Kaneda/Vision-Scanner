@@ -86,6 +86,7 @@ ERR_TIMEOUT = "TIMEOUT"
 ERR_CONNECTION_ERROR = "CONNECTION_ERROR"
 ERR_REQUEST_ERROR = "REQUEST_ERROR"
 ERR_PARSE_ERROR = "PARSE_ERROR"
+ERR_API_RESPONSE_NOT_JSON = "API_RESPONSE_NOT_JSON"
 
 # ─── 画像前処理パラメータ ───────────────────────────
 MAX_IMAGE_PIXELS = 20_000_000  # 最大ピクセル数（約80MB RAM相当）
@@ -293,12 +294,15 @@ def detect_content(image_b64, mode="text", request_id=""):
         try:
             result = response.json()
         except (ValueError, TypeError) as parse_err:
-            logger.error("[%s] APIレスポンスのJSONパースに失敗 (mode=%s): %s (先頭200文字: %.200s)",
-                         request_id, mode, parse_err, response.text)
+            content_type = response.headers.get("Content-Type", "不明")
+            logger.error("[%s] APIレスポンスのJSONパースに失敗 (mode=%s, content-type=%s): %s (先頭200文字: %.200s)",
+                         request_id, mode, content_type, parse_err, response.text)
+            # Content-Type が JSON でない場合は専用コードで切り分けを容易にする
+            error_code = ERR_API_RESPONSE_NOT_JSON if "json" not in content_type.lower() else ERR_PARSE_ERROR
             return {
                 "ok": False, "data": [], "image_size": None,
-                "error_code": ERR_PARSE_ERROR,
-                "message": "APIレスポンスの解析に失敗しました",
+                "error_code": error_code,
+                "message": f"APIレスポンスの解析に失敗しました (Content-Type: {content_type})",
             }
         responses = result.get("responses", [])
         logger.info("Vision API レスポンス keys: %s", list(responses[0].keys()) if responses else "empty")

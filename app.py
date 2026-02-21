@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # werkzeug リクエストログを明示的に有効化
 logging.getLogger("werkzeug").setLevel(logging.INFO)
 
+APP_VERSION = "1.4.0"                     # テンプレートに自動注入される
 FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
 MAX_IMAGE_SIZE = 5 * 1024 * 1024          # 5MB（Base64デコード後）
 MAX_REQUEST_BODY = 10 * 1024 * 1024       # 10MB（Base64 + JSONオーバーヘッド）
@@ -126,9 +127,9 @@ def _static_file_hash(filename):
 
 
 @app.context_processor
-def inject_static_hash():
-    """テンプレートに static_hash 関数を注入する。"""
-    return {"static_hash": _static_file_hash}
+def inject_template_globals():
+    """テンプレートに共通変数を注入する（キャッシュバスティング関数・バージョン）。"""
+    return {"static_hash": _static_file_hash, "app_version": APP_VERSION}
 
 
 # プロキシ配下でのIP取得を正しく行う（X-Forwarded-For対応）
