@@ -275,6 +275,19 @@ for i, line in enumerate(sys.stdin):
 }
 ```
 
+## トラブルシューティング
+
+| 症状 | 原因 | 対処 |
+|------|------|------|
+| カメラ映像が表示されない | HTTPSでないとカメラAPIがブロックされる | `localhost` または HTTPS環境で実行する |
+| 「APIキーが未設定です」と表示される | `.env` に `VISION_API_KEY` が未設定 | `.env.example` をコピーし、APIキーを設定してサーバー再起動 |
+| 「リクエスト頻度が高すぎます」と表示される | 分間レート制限に到達 | 1分待つか、`RATE_LIMIT_PER_MINUTE` を環境変数で変更 |
+| 「1日あたりのAPI上限に達しました」と表示される | 日次レート制限に到達 | 翌日0時にリセット、または `RATE_LIMIT_DAILY` を変更 |
+| `/readyz` が 503 を返す | APIキー未設定 or Redis接続失敗 | `/readyz` のレスポンスボディで `checks` を確認 |
+| スキャンボタンを押しても反応がない | JavaScriptのコンソールエラー | ブラウザDevTools → Console でエラーを確認 |
+| 「Vision APIエラー (ステータス 403)」 | APIキーの制限またはCloud Vision API未有効化 | Google Cloud Console で APIキーの制限とAPI有効化状態を確認 |
+| プロキシ環境で接続できない | `PROXY_URL` が未設定 | `.env` に `PROXY_URL=http://proxy:port` を設定してサーバー再起動 |
+
 ## 既知の制限
 
 - **API上限**: サーバー側 20回/分・1000回/日（IP単位、環境変数で変更可能）。フロントはサーバーから動的取得

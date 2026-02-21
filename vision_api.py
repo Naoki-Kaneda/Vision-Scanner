@@ -281,7 +281,7 @@ def detect_content(image_b64, mode="text", request_id=""):
         response = session.post(API_BASE_URL, json=payload, headers=api_headers, timeout=API_TIMEOUT_SECONDS)
 
         if response.status_code != 200:
-            logger.error("[%s] APIエラー (ステータス %d): %.500s", request_id, response.status_code, response.text)
+            logger.error("[%s] APIエラー (mode=%s, ステータス %d): %.500s", request_id, mode, response.status_code, response.text)
             return {
                 "ok": False,
                 "data": [],
@@ -293,8 +293,8 @@ def detect_content(image_b64, mode="text", request_id=""):
         try:
             result = response.json()
         except (ValueError, TypeError) as parse_err:
-            logger.error("[%s] APIレスポンスのJSONパースに失敗: %s (先頭200文字: %.200s)",
-                         request_id, parse_err, response.text)
+            logger.error("[%s] APIレスポンスのJSONパースに失敗 (mode=%s): %s (先頭200文字: %.200s)",
+                         request_id, mode, parse_err, response.text)
             return {
                 "ok": False, "data": [], "image_size": None,
                 "error_code": ERR_PARSE_ERROR,
@@ -311,7 +311,7 @@ def detect_content(image_b64, mode="text", request_id=""):
         if partial_error:
             code = partial_error.get("code", "UNKNOWN")
             msg = partial_error.get("message", "Vision API 内部エラー")
-            logger.error("Vision API 部分エラー (code=%s): %s", code, msg)
+            logger.error("[%s] Vision API 部分エラー (mode=%s, code=%s): %s", request_id, mode, code, msg)
             return {
                 "ok": False,
                 "data": [],
@@ -367,13 +367,13 @@ def detect_content(image_b64, mode="text", request_id=""):
         return {"ok": True, "data": data, "image_size": image_size, "error_code": None, "message": None}
 
     except requests.exceptions.Timeout:
-        logger.error("[%s] Vision API タイムアウト", request_id)
+        logger.error("[%s] Vision API タイムアウト (mode=%s)", request_id, mode)
         return {"ok": False, "data": [], "image_size": None, "error_code": ERR_TIMEOUT, "message": "APIリクエストがタイムアウトしました"}
     except requests.exceptions.ConnectionError as e:
-        logger.error("[%s] Vision API 接続エラー: %s", request_id, e)
+        logger.error("[%s] Vision API 接続エラー (mode=%s): %s", request_id, mode, e)
         return {"ok": False, "data": [], "image_size": None, "error_code": ERR_CONNECTION_ERROR, "message": "API接続に失敗しました"}
     except requests.exceptions.RequestException as e:
-        logger.error("[%s] Vision API通信エラー: %s", request_id, e)
+        logger.error("[%s] Vision API通信エラー (mode=%s): %s", request_id, mode, e)
         return {"ok": False, "data": [], "image_size": None, "error_code": ERR_REQUEST_ERROR, "message": str(e)}
 
 

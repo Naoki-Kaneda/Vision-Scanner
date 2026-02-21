@@ -264,7 +264,11 @@ def healthz():
 
 @app.route("/readyz")
 def readyz():
-    """Readiness: リクエスト処理可能か（APIキー・バックエンド等の設定チェック）"""
+    """Readiness: リクエスト処理可能か（APIキー・バックエンド等の設定チェック）
+
+    クエリパラメータ:
+        check_api=true: Vision APIエンドポイントへのDNS到達性も検査する（オプション）
+    """
     rate_backend = get_backend_type()
 
     # REDIS_URL が設定されているのにインメモリにフォールバックしている場合は警告
@@ -276,16 +280,30 @@ def readyz():
         "rate_limiter_ok": not redis_fallback,
     }
 
-    all_ok = bool(API_KEY) and not redis_fallback
+    warnings_list = []
+    if redis_fallback:
+        warnings_list.append(
+            "REDIS_URL が設定されていますが、Redis接続に失敗しインメモリにフォールバックしています"
+        )
+
+    # オプション: Vision APIエンドポイントの到達性チェック
+    if request.args.get("check_api", "").lower() == "true":
+        import socket
+        try:
+            socket.getaddrinfo("vision.googleapis.com", 443, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            checks["api_reachable"] = True
+        except socket.gaierror:
+            checks["api_reachable"] = False
+            warnings_list.append("Vision API (vision.googleapis.com) のDNS解決に失敗しました")
+
+    all_ok = bool(API_KEY) and not redis_fallback and checks.get("api_reachable", True)
 
     response_data = {
         "status": "ok" if all_ok else "not_ready",
         "checks": checks,
     }
-    if redis_fallback:
-        response_data["warnings"] = [
-            "REDIS_URL が設定されていますが、Redis接続に失敗しインメモリにフォールバックしています"
-        ]
+    if warnings_list:
+        response_data["warnings"] = warnings_list
 
     return jsonify(response_data), 200 if all_ok else 503
 
@@ -437,12 +455,12 @@ def analyze_endpoint():
 
     except ValueError as e:
         release_request(client_ip, request_id)
-        _log("warning", "validation_error", ip=client_ip, error=str(e))
+        _log("warning", "validation_error", ip=client_ip, mode=mode, error=str(e))
         return _error_response(ERR_VALIDATION_ERROR, str(e))
 
     except Exception as e:
         release_request(client_ip, request_id)
-        _log("error", "server_error", ip=client_ip, error=str(e))
+        _log("error", "server_error", ip=client_ip, mode=mode, error=str(e))
         return _error_response(ERR_SERVER_ERROR, "内部サーバーエラーが発生しました", 500)
 
 
