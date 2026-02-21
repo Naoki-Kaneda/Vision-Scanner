@@ -57,6 +57,29 @@
                             <button class="mode-btn" id="mode-object">物体</button>
                             <button class="mode-btn" id="mode-label">ラベル</button>
                         </div>
+                        <button id="btn-help" class="help-btn" title="モード説明">?</button>
+                    </div>
+
+                    <!-- ヘルプポップアップ -->
+                    <div id="help-popup" class="help-popup hidden">
+                        <div class="help-popup-header">
+                            <span class="help-popup-title">モード説明</span>
+                            <button id="btn-help-close" class="help-popup-close">&times;</button>
+                        </div>
+                        <div class="help-popup-body">
+                            <div class="help-item">
+                                <span class="help-mode-badge text">テキスト</span>
+                                <p>カメラに映った文字を読み取ります（OCR）。書類、看板、名刺などのテキスト抽出に最適です。</p>
+                            </div>
+                            <div class="help-item">
+                                <span class="help-mode-badge object">物体</span>
+                                <p>映像内の物体を検出し、名前と位置を表示します。ボトル、箱、機器などを自動認識します。</p>
+                            </div>
+                            <div class="help-item">
+                                <span class="help-mode-badge label">ラベル</span>
+                                <p>ラベルの有無を判定します。テキストが読み取れれば <span class="help-ok">OK</span>、読み取れなければ <span class="help-ng">NG</span> と表示します。検査間隔は5秒です。</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

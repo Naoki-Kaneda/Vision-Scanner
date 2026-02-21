@@ -372,6 +372,134 @@ video {
     color: var(--md-on-surface);
 }
 
+/* ─── ヘルプボタン ──────────────────────────── */
+.help-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 1px solid var(--md-outline);
+    background: transparent;
+    color: var(--md-on-surface-variant);
+    font-size: 0.8rem;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--md-motion-standard);
+    flex-shrink: 0;
+}
+
+.help-btn:hover {
+    background: rgba(168, 199, 250, 0.15);
+    color: var(--md-primary);
+    border-color: var(--md-primary);
+}
+
+/* ─── ヘルプポップアップ ────────────────────── */
+.help-popup {
+    position: absolute;
+    bottom: 48px;
+    right: 8px;
+    width: 300px;
+    background: var(--md-surface-container-highest);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-shape-corner-l);
+    box-shadow: var(--md-elevation-2);
+    z-index: 30;
+    animation: helpFadeIn 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes helpFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.help-popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px 8px;
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.help-popup-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+}
+
+.help-popup-close {
+    background: transparent;
+    border: none;
+    color: var(--md-on-surface-variant);
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    border-radius: 50%;
+    transition: background var(--md-motion-standard);
+}
+
+.help-popup-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.help-popup-body {
+    padding: 12px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.help-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.help-item p {
+    font-size: 0.78rem;
+    color: var(--md-on-surface-variant);
+    line-height: 1.5;
+    margin: 0;
+}
+
+.help-mode-badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: var(--md-shape-corner-full);
+    width: fit-content;
+}
+
+.help-mode-badge.text {
+    background: var(--md-secondary-container);
+    color: var(--md-on-surface);
+}
+
+.help-mode-badge.object {
+    background: var(--md-secondary-container);
+    color: var(--md-on-surface);
+}
+
+.help-mode-badge.label {
+    background: var(--md-primary-container);
+    color: var(--md-on-primary-container);
+}
+
+.help-ok {
+    color: #00c853;
+    font-weight: 700;
+}
+
+.help-ng {
+    color: #ff3b3b;
+    font-weight: 700;
+}
+
 /* ─── MD3 Outlined Button（ソース切替） ─────── */
 .controls {
     display: flex;

@@ -928,6 +928,23 @@ function init() {
     btnScan.addEventListener('click', toggleScanning);
     if (btnClear) btnClear.addEventListener('click', clearResults);
 
+    // ヘルプポップアップの開閉
+    const btnHelp = document.getElementById('btn-help');
+    const helpPopup = document.getElementById('help-popup');
+    const btnHelpClose = document.getElementById('btn-help-close');
+    if (btnHelp && helpPopup) {
+        btnHelp.addEventListener('click', () => helpPopup.classList.toggle('hidden'));
+        if (btnHelpClose) btnHelpClose.addEventListener('click', () => helpPopup.classList.add('hidden'));
+        // ポップアップ外をクリックで閉じる
+        document.addEventListener('click', (e) => {
+            if (!helpPopup.classList.contains('hidden')
+                && !helpPopup.contains(e.target)
+                && e.target !== btnHelp) {
+                helpPopup.classList.add('hidden');
+            }
+        });
+    }
+
     // 画面離脱時にカメラを確実に解放する（LED点灯残り防止）
     document.addEventListener('visibilitychange', () => {
         if (document.hidden) stopCameraStream();
