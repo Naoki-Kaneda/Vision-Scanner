@@ -162,6 +162,35 @@ h1 {
     border-color: var(--md-outline-variant);
 }
 
+/* ─── 重複スキップバッジ ──────────────────────── */
+.dup-skip-badge {
+    font-size: 0.7rem;
+    font-family: 'Inter', monospace;
+    padding: 3px 8px;
+    border-radius: var(--md-shape-corner-full);
+    line-height: 1;
+    white-space: nowrap;
+    transition: all var(--md-motion-standard);
+}
+
+.dup-skip-badge.counting {
+    background: var(--md-surface-container-high);
+    color: var(--md-on-surface-variant);
+    border: 1px solid var(--md-outline-variant);
+}
+
+.dup-skip-badge.paused {
+    background: var(--md-error-container);
+    color: var(--md-on-error-container);
+    border: 1px solid var(--md-error);
+    animation: dup-pulse 2s ease-in-out infinite;
+}
+
+@keyframes dup-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
 /* ─── メイングリッド ────────────────────────── */
 .main-grid {
     display: grid;
@@ -1091,7 +1120,8 @@ video {
 
     /* ステータスバッジの縮小 */
     .proxy-badge,
-    .api-counter {
+    .api-counter,
+    .dup-skip-badge {
         font-size: 0.7rem;
         padding: 3px 8px;
     }
@@ -1141,7 +1171,8 @@ video {
 
     /* ステータスバッジのさらなる縮小 */
     .proxy-badge,
-    .api-counter {
+    .api-counter,
+    .dup-skip-badge {
         font-size: 0.65rem;
         padding: 2px 6px;
     }

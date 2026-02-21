@@ -62,7 +62,7 @@ function fetchSignal(ms = FETCH_TIMEOUT_MS) {
 let video, canvas, ctx, overlayCanvas, overlayCtx;
 let resultList, btnScan, statusDot, statusText;
 let videoContainer, stabilityBarContainer, stabilityBarFill;
-let btnProxy, apiCounter, cameraSelector;
+let btnProxy, apiCounter, dupSkipBadge, cameraSelector;
 let btnCamera, btnFile, btnFlipCam;
 let modeText, modeObject, modeLabel, modeFace, modeLogo, modeClassify, modeWeb;
 
@@ -493,6 +493,7 @@ function stopScanning() {
     isDuplicatePaused = false;
     duplicateCount = 0;
     lastResultFingerprint = null;
+    updateDupSkipBadge();
 
     // 安定化バーを非表示
     if (stabilityBarContainer) stabilityBarContainer.classList.add('hidden');
@@ -578,11 +579,12 @@ function checkStabilityAndCapture() {
             // 動きを検出 → カウンターリセット
             stabilityCounter = 0;
             // 重複一時停止中にカメラが動いたら解除
-            if (isDuplicatePaused) {
+            if (isDuplicatePaused || duplicateCount > 0) {
                 isDuplicatePaused = false;
                 duplicateCount = 0;
                 lastResultFingerprint = null;
                 if (statusText) statusText.textContent = 'スキャン中';
+                updateDupSkipBadge();
             }
             if (stabilityBarFill) {
                 stabilityBarFill.style.width = '0%';
@@ -760,6 +762,7 @@ async function captureAndAnalyze() {
                 duplicateCount = fingerprint ? 1 : 0;
             }
             if (fingerprint) lastResultFingerprint = fingerprint;
+            updateDupSkipBadge();
         }
 
         // ラベルモード: OK/NG 判定結果を表示
@@ -866,6 +869,37 @@ function computeResultFingerprint(result) {
         .filter(l => l.length > 0)
         .sort();
     return labels.length > 0 ? labels.join('|') : null;
+}
+
+/**
+ * 重複スキップバッジの表示を更新する。
+ * スキャン中のみ表示し、カウント中/一時停止中で見た目を切り替える。
+ */
+function updateDupSkipBadge() {
+    if (!dupSkipBadge) return;
+
+    if (!isScanning || duplicateCount === 0) {
+        // スキャン停止中 or 初回 → 非表示
+        dupSkipBadge.classList.add('hidden');
+        dupSkipBadge.classList.remove('counting', 'paused');
+        return;
+    }
+
+    dupSkipBadge.classList.remove('hidden');
+
+    if (isDuplicatePaused) {
+        // 一時停止中 → 赤系パルス
+        dupSkipBadge.classList.remove('counting');
+        dupSkipBadge.classList.add('paused');
+        dupSkipBadge.textContent = '重複停止中';
+        dupSkipBadge.title = `同じ内容を${duplicateCount}回連続検出 ― カメラを動かすと再開`;
+    } else {
+        // カウント中 → グレー表示
+        dupSkipBadge.classList.remove('paused');
+        dupSkipBadge.classList.add('counting');
+        dupSkipBadge.textContent = `${duplicateCount}/${DUPLICATE_SKIP_COUNT}`;
+        dupSkipBadge.title = `同じ内容を${duplicateCount}回連続検出中（${DUPLICATE_SKIP_COUNT}回でスキップ）`;
+    }
 }
 
 
@@ -1229,6 +1263,7 @@ function init() {
     stabilityBarFill = document.getElementById('stability-bar-fill');
     btnProxy = document.getElementById('btn-proxy');
     apiCounter = document.getElementById('api-counter');
+    dupSkipBadge = document.getElementById('dup-skip-badge');
     cameraSelector = document.getElementById('camera-selector');
     btnCamera = document.getElementById('btn-camera');
     btnFile = document.getElementById('btn-file');

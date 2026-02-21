@@ -296,6 +296,31 @@ for i, line in enumerate(sys.stdin):
 | スキャンボタンを押しても反応がない | JavaScriptのコンソールエラー | ブラウザDevTools → Console でエラーを確認 |
 | 「Vision APIエラー (ステータス 403)」 | APIキーの制限またはCloud Vision API未有効化 | Google Cloud Console で APIキーの制限とAPI有効化状態を確認 |
 | プロキシ環境で接続できない | `PROXY_URL` が未設定 | `.env` に `PROXY_URL=http://proxy:port` を設定してサーバー再起動 |
+| 重複スキップが解除されない | localStorageの設定値が不正 | ブラウザDevTools → Console で下記コマンドを実行 |
+
+### localStorageキーとリセット手順
+
+フロントエンドはブラウザの `localStorage` に以下のキーでデータを保存します。
+
+| キー名 | 内容 | 既定値 |
+|--------|------|--------|
+| `visionApiUsage` | 日次API使用量（`{date, count}`） | 日替わりで自動リセット |
+| `duplicateSkipCount` | 重複スキップ回数設定（1〜5） | `2` |
+
+**全設定を初期化する手順:**
+
+ブラウザのDevTools（F12）→ Console で以下を実行してください。
+
+```javascript
+// 個別リセット
+localStorage.removeItem('duplicateSkipCount');  // 重複スキップ設定
+localStorage.removeItem('visionApiUsage');      // API使用量カウンター
+
+// 全設定を一括リセット（Vision AI Scanner の全データ）
+localStorage.clear();
+```
+
+リセット後、ページを再読込（F5）すると既定値に戻ります。
 
 ## 既知の制限
 
