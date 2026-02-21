@@ -165,3 +165,67 @@ class TestHelpUI:
         page.locator("h1").click()
         page.wait_for_timeout(200)
         assert "hidden" in (popup.get_attribute("class") or "")
+
+
+class TestDuplicateSkipSetting:
+    """重複スキップ回数スライダーの回帰テスト。"""
+
+    def test_スライダーが初期値2で表示される(self, page):
+        """ヘルプポップアップ内のスライダーが初期値2を持つこと。"""
+        # ポップアップを開く
+        page.locator("#btn-help").click()
+
+        slider = page.locator("#duplicate-skip-count")
+        value_label = page.locator("#duplicate-skip-value")
+
+        assert slider.is_visible()
+        assert slider.input_value() == "2"
+        assert "2回" in value_label.text_content()
+
+    def test_スライダー値変更で表示が更新される(self, page):
+        """スライダーを動かすと横の表示テキストが即座に更新されること。"""
+        page.locator("#btn-help").click()
+
+        slider = page.locator("#duplicate-skip-count")
+        value_label = page.locator("#duplicate-skip-value")
+
+        # スライダーを4に変更（fill + inputイベント発火）
+        slider.fill("4")
+        slider.dispatch_event("input")
+
+        assert "4回" in value_label.text_content()
+
+    def test_スライダー値がlocalStorageに保存される(self, page):
+        """スライダーの変更値がlocalStorageに保存されること。"""
+        page.locator("#btn-help").click()
+
+        slider = page.locator("#duplicate-skip-count")
+        slider.fill("3")
+        slider.dispatch_event("input")
+
+        # localStorageから保存値を取得
+        stored = page.evaluate("() => localStorage.getItem('duplicateSkipCount')")
+        assert stored == "3"
+
+    def test_ページ再読込後にスライダー値が復元される(self, page, live_server):
+        """localStorageに保存された値がページ再読込後にスライダーに反映されること。"""
+        # まずスライダーを5に変更して保存
+        page.locator("#btn-help").click()
+        slider = page.locator("#duplicate-skip-count")
+        slider.fill("5")
+        slider.dispatch_event("input")
+
+        # ページを再読込
+        page.goto(live_server)
+        page.wait_for_load_state("domcontentloaded")
+
+        # ポップアップを開いてスライダーを確認
+        page.locator("#btn-help").click()
+        restored_slider = page.locator("#duplicate-skip-count")
+        restored_label = page.locator("#duplicate-skip-value")
+
+        assert restored_slider.input_value() == "5"
+        assert "5回" in restored_label.text_content()
+
+        # テスト後にlocalStorageをクリーンアップ
+        page.evaluate("() => localStorage.removeItem('duplicateSkipCount')")
