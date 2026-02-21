@@ -907,7 +907,7 @@ video {
     background: var(--md-outline);
 }
 
-/* ─── レスポンシブ対応 ──────────────────────── */
+/* ─── レスポンシブ対応（タブレット: 〜768px） ──── */
 @media (max-width: 768px) {
     body {
         height: auto;
@@ -951,5 +951,132 @@ video {
     .status-indicator {
         flex-wrap: wrap;
         justify-content: center;
+    }
+
+    /* モードボタン: 2段 → 1段横スクロール */
+    .video-tools {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        flex-wrap: nowrap;
+        border-radius: var(--md-shape-corner-m);
+        padding: 6px 8px;
+        max-width: 100%;
+    }
+
+    .video-tools::-webkit-scrollbar {
+        display: none;
+    }
+
+    .mode-switch-group {
+        flex-direction: row;
+        gap: 6px;
+        flex-shrink: 0;
+    }
+
+    .mode-switch {
+        flex-shrink: 0;
+    }
+
+    /* タッチターゲット拡大（44px以上確保） */
+    .mode-btn {
+        padding: 8px 14px;
+        font-size: 0.8rem;
+    }
+
+    .tool-btn {
+        padding: 8px 14px;
+        font-size: 0.8rem;
+    }
+
+    .help-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 0.9rem;
+    }
+
+    /* ヘルプポップアップ: 画面幅に応じて可変 */
+    .help-popup {
+        width: calc(100vw - 48px);
+        max-width: 300px;
+        right: 0;
+        left: 0;
+        margin: 0 auto;
+    }
+
+    /* ステータスバッジの縮小 */
+    .proxy-badge,
+    .api-counter {
+        font-size: 0.7rem;
+        padding: 3px 8px;
+    }
+}
+
+/* ─── レスポンシブ対応（スマホ: 〜480px） ────── */
+@media (max-width: 480px) {
+    body {
+        padding: 4px;
+    }
+
+    .container {
+        gap: 8px;
+    }
+
+    header {
+        padding: 6px 12px;
+    }
+
+    h1 {
+        font-size: 1rem;
+    }
+
+    .panel {
+        padding: 10px;
+        gap: 8px;
+    }
+
+    .video-panel {
+        overflow: visible;
+    }
+
+    .primary-btn {
+        padding: 10px;
+        font-size: 0.85rem;
+    }
+
+    /* ヘルプポップアップ: ほぼ全幅 */
+    .help-popup {
+        width: calc(100vw - 24px);
+        bottom: 56px;
+    }
+
+    .help-popup-body {
+        max-height: 50vh;
+    }
+
+    /* ステータスバッジのさらなる縮小 */
+    .proxy-badge,
+    .api-counter {
+        font-size: 0.65rem;
+        padding: 2px 6px;
+    }
+
+    #status-text {
+        font-size: 0.7rem;
+    }
+
+    /* 映像ツールバーのpadding縮小 */
+    .video-tools {
+        padding: 4px 6px;
+        gap: 6px;
+    }
+
+    .mode-btn {
+        padding: 7px 12px;
+        font-size: 0.75rem;
+    }
+
+    .tool-btn {
+        padding: 7px 10px;
+        font-size: 0.75rem;
     }
 }
