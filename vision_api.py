@@ -94,6 +94,20 @@ CONTRAST_FACTOR = 1.5          # コントラスト強調係数
 SHARPNESS_FACTOR = 1.5         # シャープネス強調係数（文字の輪郭を明確に）
 JPEG_QUALITY = 95              # JPEG保存品質
 
+
+# ─── レスポンスビルダー（辞書構築の一元化） ───────────────
+def _make_success(data, image_size=None, **extra):
+    """成功レスポンス辞書を生成する。"""
+    return {"ok": True, "data": data, "image_size": image_size,
+            "error_code": None, "message": None, **extra}
+
+
+def _make_error(error_code, message):
+    """失敗レスポンス辞書を生成する。"""
+    return {"ok": False, "data": [], "image_size": None,
+            "error_code": error_code, "message": message}
+
+
 # SSL検証無効時のみ警告を抑制
 if not VERIFY_SSL:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -168,8 +182,8 @@ def _get_image_dimensions(image_b64):
     """
     try:
         image_bytes = base64.b64decode(image_b64)
-        img = Image.open(io.BytesIO(image_bytes))
-        return [img.width, img.height]
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            return [img.width, img.height]
     except Exception:
         return None
 
@@ -187,23 +201,22 @@ def preprocess_image(image_base64):
         前処理済みのBase64エンコード画像文字列。
     """
     image_bytes = base64.b64decode(image_base64)
-    img = Image.open(io.BytesIO(image_bytes))
+    with Image.open(io.BytesIO(image_bytes)) as img:
+        # 画像展開爆弾対策: ピクセル数が大きすぎる場合は拒否
+        if img.width * img.height > MAX_IMAGE_PIXELS:
+            raise ValueError(f"画像サイズが大きすぎます: {img.width}x{img.height}")
 
-    # 画像展開爆弾対策: ピクセル数が大きすぎる場合は拒否
-    if img.width * img.height > MAX_IMAGE_PIXELS:
-        raise ValueError(f"画像サイズが大きすぎます: {img.width}x{img.height}")
+        # RGBA/CMYK等のモードをRGBに変換（JPEG保存に必要）
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
 
-    # RGBA/CMYK等のモードをRGBに変換（JPEG保存に必要）
-    if img.mode not in ("RGB", "L"):
-        img = img.convert("RGB")
+        # コントラスト・シャープネスを強調（OCR精度向上）
+        img = ImageEnhance.Contrast(img).enhance(CONTRAST_FACTOR)
+        img = ImageEnhance.Sharpness(img).enhance(SHARPNESS_FACTOR)
 
-    # コントラスト・シャープネスを強調（OCR精度向上）
-    img = ImageEnhance.Contrast(img).enhance(CONTRAST_FACTOR)
-    img = ImageEnhance.Sharpness(img).enhance(SHARPNESS_FACTOR)
-
-    # JPEG形式で高画質保存
-    buffer = io.BytesIO()
-    img.save(buffer, format="JPEG", quality=JPEG_QUALITY)
+        # JPEG形式で高画質保存
+        buffer = io.BytesIO()
+        img.save(buffer, format="JPEG", quality=JPEG_QUALITY)
     return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 
@@ -283,13 +296,7 @@ def detect_content(image_b64, mode="text", request_id=""):
 
         if response.status_code != 200:
             logger.error("[%s] APIエラー (mode=%s, ステータス %d): %.500s", request_id, mode, response.status_code, response.text)
-            return {
-                "ok": False,
-                "data": [],
-                "image_size": None,
-                "error_code": f"API_{response.status_code}",
-                "message": f"Vision APIエラー (ステータス {response.status_code})",
-            }
+            return _make_error(f"API_{response.status_code}", f"Vision APIエラー (ステータス {response.status_code})")
 
         try:
             result = response.json()
@@ -299,15 +306,12 @@ def detect_content(image_b64, mode="text", request_id=""):
                          request_id, mode, content_type, parse_err, response.text)
             # Content-Type が JSON でない場合は専用コードで切り分けを容易にする
             error_code = ERR_API_RESPONSE_NOT_JSON if "json" not in content_type.lower() else ERR_PARSE_ERROR
-            return {
-                "ok": False, "data": [], "image_size": None,
-                "error_code": error_code,
-                "message": f"APIレスポンスの解析に失敗しました (Content-Type: {content_type})",
-            }
+            return _make_error(error_code, f"APIレスポンスの解析に失敗しました (Content-Type: {content_type})")
+
         responses = result.get("responses", [])
         logger.info("Vision API レスポンス keys: %s", list(responses[0].keys()) if responses else "empty")
         if not responses:
-            return {"ok": True, "data": [], "image_size": None, "error_code": None, "message": None}
+            return _make_success([])
 
         # HTTP 200 でも responses[0] 内部にエラーが入る場合がある（Vision API の仕様）
         response_item = responses[0]
@@ -316,13 +320,7 @@ def detect_content(image_b64, mode="text", request_id=""):
             code = partial_error.get("code", "UNKNOWN")
             msg = partial_error.get("message", "Vision API 内部エラー")
             logger.error("[%s] Vision API 部分エラー (mode=%s, code=%s): %s", request_id, mode, code, msg)
-            return {
-                "ok": False,
-                "data": [],
-                "image_size": None,
-                "error_code": f"VISION_{code}",
-                "message": msg,
-            }
+            return _make_error(f"VISION_{code}", msg)
 
         if mode == "text":
             data, image_size = _parse_text_response(response_item)
@@ -330,15 +328,7 @@ def detect_content(image_b64, mode="text", request_id=""):
         elif mode == "label":
             data, image_size, label_detected, label_reason = _parse_label_response(response_item)
             logger.info("ラベル検出結果: detected=%s, reason=%s", label_detected, label_reason)
-            return {
-                "ok": True,
-                "data": data,
-                "image_size": image_size,
-                "label_detected": label_detected,
-                "label_reason": label_reason,
-                "error_code": None,
-                "message": None,
-            }
+            return _make_success(data, image_size, label_detected=label_detected, label_reason=label_reason)
         elif mode == "face":
             image_size = _get_image_dimensions(image_b64)
             data = _parse_face_response(response_item)
@@ -355,30 +345,23 @@ def detect_content(image_b64, mode="text", request_id=""):
             data, web_detail = _parse_web_response(response_item)
             image_size = None
             logger.info("Web検索結果: entities=%d件", len(web_detail.get("entities", [])))
-            return {
-                "ok": True,
-                "data": data,
-                "image_size": None,
-                "web_detail": web_detail,
-                "error_code": None,
-                "message": None,
-            }
+            return _make_success(data, web_detail=web_detail)
         else:
             data = _parse_object_response(response_item)
             image_size = None  # 物体モードは正規化座標（0〜1）を使用
             logger.info("物体検出結果: %d件", len(data))
 
-        return {"ok": True, "data": data, "image_size": image_size, "error_code": None, "message": None}
+        return _make_success(data, image_size)
 
     except requests.exceptions.Timeout:
         logger.error("[%s] Vision API タイムアウト (mode=%s)", request_id, mode)
-        return {"ok": False, "data": [], "image_size": None, "error_code": ERR_TIMEOUT, "message": "APIリクエストがタイムアウトしました"}
+        return _make_error(ERR_TIMEOUT, "APIリクエストがタイムアウトしました")
     except requests.exceptions.ConnectionError as e:
         logger.error("[%s] Vision API 接続エラー (mode=%s): %s", request_id, mode, e)
-        return {"ok": False, "data": [], "image_size": None, "error_code": ERR_CONNECTION_ERROR, "message": "API接続に失敗しました"}
+        return _make_error(ERR_CONNECTION_ERROR, "API接続に失敗しました")
     except requests.exceptions.RequestException as e:
         logger.error("[%s] Vision API通信エラー (mode=%s): %s", request_id, mode, e)
-        return {"ok": False, "data": [], "image_size": None, "error_code": ERR_REQUEST_ERROR, "message": str(e)}
+        return _make_error(ERR_REQUEST_ERROR, str(e))
 
 
 # ─── レスポンス解析（内部関数） ──────────────────────

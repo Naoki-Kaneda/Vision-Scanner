@@ -167,11 +167,22 @@ async function loadRateLimits() {
     }
 }
 
+/** スキャンボタンの内容をDOM操作で安全に更新する（innerHTML不使用）。 */
+function _setBtnScanContent(iconText, labelText) {
+    if (!btnScan) return;
+    while (btnScan.firstChild) btnScan.removeChild(btnScan.firstChild);
+    const icon = document.createElement('span');
+    icon.className = 'icon';
+    icon.textContent = iconText;
+    btnScan.appendChild(icon);
+    btnScan.appendChild(document.createTextNode(' ' + labelText));
+}
+
 /** スキャンボタンを無効化する（API上限到達時）。 */
 function disableScanButton(message) {
     if (!btnScan) return;
     btnScan.disabled = true;
-    btnScan.innerHTML = `<span class="icon">⚠</span> ${message}`;
+    _setBtnScanContent('⚠', message);
     btnScan.style.opacity = '0.5';
     btnScan.style.cursor = 'not-allowed';
 }
@@ -429,6 +440,13 @@ function updateSourceButtons() {
 // スキャン・安定化検出
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+/** 重複検出状態をリセットする。 */
+function resetDuplicateState() {
+    isDuplicatePaused = false;
+    duplicateCount = 0;
+    lastResultFingerprint = null;
+}
+
 /** スキャンの開始/停止を切り替える（チャタリング防止: タイムスタンプガード）。 */
 let lastToggleTime = 0;
 function toggleScanning() {
@@ -449,7 +467,8 @@ function startScanning() {
     }
 
     isScanning = true;
-    btnScan.innerHTML = '<span class="icon">■</span> ストップ';
+    // XSS対策: DOM操作でボタン内容を更新（innerHTML不使用）
+    _setBtnScanContent('■', 'ストップ');
     btnScan.classList.add('scanning');
     if (videoContainer) videoContainer.classList.add('scanning');
     if (statusDot) statusDot.classList.add('active');
@@ -480,7 +499,8 @@ function stopScanning() {
         retryTimerId = null;
     }
     clearOverlay();
-    btnScan.innerHTML = '<span class="icon">▶</span> スタート';
+    // XSS対策: DOM操作でボタン内容を更新（innerHTML不使用）
+    _setBtnScanContent('▶', 'スタート');
     btnScan.classList.remove('scanning');
     if (videoContainer) videoContainer.classList.remove('scanning');
     if (statusDot) statusDot.classList.remove('active');
