@@ -16,55 +16,157 @@
 
 ### 必要なもの
 - Python 3.9以上
-- Google Cloud Vision APIキー
+- Git
+- Google Cloud Vision APIキー（[取得方法はこちら](#google-cloud-vision-apiキーの取得方法)）
 
-### インストール
+---
+
+### Ubuntu / Linux の場合
+
+ターミナルを開いて、以下のコマンドを **上から順番にコピペ** してください。
+
+#### ステップ1: システムの準備（初回のみ）
 
 ```bash
-# リポジトリをクローン
-git clone https://github.com/your-username/vision-ai-scanner.git
-cd vision-ai-scanner
+sudo apt update && sudo apt install -y python3 python3-pip python3-venv git
+```
 
-# 仮想環境の作成と有効化
-python -m venv venv
-venv\Scripts\Activate.ps1   # Windows (PowerShell)
-# source venv/bin/activate  # Mac/Linux
+#### ステップ2: ソースコードの取得
 
-# 依存ライブラリのインストール
+```bash
+git clone https://github.com/Naoki-Kaneda/Vision-Scanner.git
+cd Vision-Scanner
+```
+
+#### ステップ3: Python仮想環境の作成と有効化
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+> 成功すると、ターミナルの先頭に `(venv)` と表示されます。
+
+#### ステップ4: ライブラリのインストール
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 3. 環境変数の設定
+#### ステップ5: APIキーの設定
 
-`.env.example` をコピーして `.env` ファイルを作成し、APIキーを設定してください。
-
-**Windows (PowerShell):**
-```powershell
-Copy-Item .env.example .env
-```
-
-**macOS / Linux:**
 ```bash
 cp .env.example .env
+nano .env
 ```
 
-`.env` ファイルを開き、`VISION_API_KEY` にGoogle Cloud Vision APIのキーを入力してください。
+エディタが開いたら、1行目の `your_api_key_here` を自分のAPIキーに書き換えてください。
 
-```env
-# 必須: Google Cloud Vision APIキー
-VISION_API_KEY=your_api_key_here
-
-# オプション: プロキシURL（企業ネットワーク等）
-PROXY_URL=
-
-# オプション: SSL検証（デフォルト: true）
-VERIFY_SSL=true
-
-# オプション: デバッグモード（デフォルト: false）
-FLASK_DEBUG=false
+```
+VISION_API_KEY=ここにAPIキーを貼り付ける
 ```
 
-### 4. 開発用ツールのインストール（任意）
+書き換えたら `Ctrl + O` → `Enter`（保存） → `Ctrl + X`（終了）で閉じます。
+
+#### ステップ6: 起動
+
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+`[OK] Flask起動中...` と表示されたら成功です。
+ブラウザで **http://localhost:5000** を開いてください。
+
+#### 次回以降の起動（2回目から）
+
+```bash
+cd Vision-Scanner
+source venv/bin/activate
+./start.sh
+```
+
+---
+
+### Windows の場合
+
+PowerShellを開いて、以下のコマンドを **上から順番にコピペ** してください。
+
+#### ステップ1: ソースコードの取得
+
+```powershell
+git clone https://github.com/Naoki-Kaneda/Vision-Scanner.git
+cd Vision-Scanner
+```
+
+> Git が入っていない場合は https://git-scm.com からインストールしてください。
+
+#### ステップ2: Python仮想環境の作成と有効化
+
+```powershell
+python -m venv venv
+venv\Scripts\Activate.ps1
+```
+
+> `venv\Scripts\Activate.ps1` でエラーが出る場合:
+> ```powershell
+> Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+> ```
+> を実行してから再度お試しください。
+
+#### ステップ3: ライブラリのインストール
+
+```powershell
+pip install -r requirements.txt
+```
+
+#### ステップ4: APIキーの設定
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+```
+
+メモ帳が開いたら、1行目の `your_api_key_here` を自分のAPIキーに書き換えて保存してください。
+
+```
+VISION_API_KEY=ここにAPIキーを貼り付ける
+```
+
+#### ステップ5: 起動
+
+```powershell
+start.bat
+```
+
+またはダブルクリックでも起動できます。
+
+`[OK] Flask起動中...` と表示されたら成功です。
+ブラウザで **http://localhost:5000** を開いてください。
+
+#### 次回以降の起動（2回目から）
+
+```powershell
+cd Vision-Scanner
+venv\Scripts\Activate.ps1
+start.bat
+```
+
+---
+
+### Google Cloud Vision APIキーの取得方法
+
+1. [Google Cloud Console](https://console.cloud.google.com/) にアクセスしてログイン
+2. プロジェクトを作成（または既存プロジェクトを選択）
+3. 左メニュー「APIとサービス」→「ライブラリ」→ **Cloud Vision API** を検索して「有効にする」
+4. 左メニュー「APIとサービス」→「認証情報」→「認証情報を作成」→「APIキー」
+5. 作成されたAPIキーをコピーして `.env` に貼り付ける
+
+> セキュリティのため、APIキーに「Cloud Vision API のみ許可」の制限を設定することを推奨します。
+
+---
+
+### 開発用ツールのインストール（任意）
 
 テストや静的解析を行う場合は追加パッケージをインストールします。
 
@@ -72,21 +174,16 @@ FLASK_DEBUG=false
 pip install -r requirements-dev.txt
 ```
 
-## 🚀 使い方
+## 使い方
 
 ### アプリケーションの起動
 
-**Windows (PowerShell):**
-```powershell
-python app.py
-```
+| OS | コマンド |
+|---|---|
+| Ubuntu / Linux | `./start.sh`（または `python3 app.py`） |
+| Windows | `start.bat`（または `python app.py`） |
 
-**macOS / Linux:**
-```bash
-python3 app.py
-```
-
-ブラウザで `http://localhost:5000` にアクセスしてください。
+ブラウザで **http://localhost:5000** にアクセスしてください。
 
 ### プロキシ環境下での利用
 
