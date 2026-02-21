@@ -44,9 +44,17 @@ const MODE_BOX_CONFIG = {
     web:      { color: null,      bg: null,                        showLabel: false },
 };
 
-/** タイムアウト付き fetch のシグナルを生成する。 */
+/** タイムアウト付き fetch のシグナルを生成する。
+ *  AbortSignal.timeout() 非対応ブラウザ（Safari 15以前等）では
+ *  AbortController + setTimeout でフォールバックする。 */
 function fetchSignal(ms = FETCH_TIMEOUT_MS) {
-    return AbortSignal.timeout(ms);
+    if (typeof AbortSignal.timeout === 'function') {
+        return AbortSignal.timeout(ms);
+    }
+    // フォールバック: 手動タイムアウト
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms);
+    return controller.signal;
 }
 
 // ─── DOM要素の参照（init() で DOMContentLoaded 後に取得） ────

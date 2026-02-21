@@ -74,6 +74,19 @@ class TestDetectContentHttpErrors:
         assert result["ok"] is False
         assert result["error_code"] == "REQUEST_ERROR"
 
+    @patch("vision_api.session.post")
+    def test_JSONパース失敗はPARSE_ERRORを返す(self, mock_post):
+        """レスポンスがJSON以外（HTML等）の場合は ok=False, error_code=PARSE_ERROR を返すこと。"""
+        mock_resp = make_mock_response(status_code=200)
+        mock_resp.json.side_effect = ValueError("No JSON object could be decoded")
+        mock_resp.text = "<html>Service Unavailable</html>"
+        mock_post.return_value = mock_resp
+        from vision_api import detect_content
+        result = detect_content(make_b64(), mode="text")
+        assert result["ok"] is False
+        assert result["error_code"] == "PARSE_ERROR"
+        assert "解析に失敗" in result["message"]
+
 
 # ─── detect_content: Vision API 部分エラー ────────
 class TestDetectContentPartialError:

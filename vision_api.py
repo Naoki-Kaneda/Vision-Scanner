@@ -85,6 +85,7 @@ API_TIMEOUT_SECONDS = 15       # APIリクエストタイムアウト（秒）
 ERR_TIMEOUT = "TIMEOUT"
 ERR_CONNECTION_ERROR = "CONNECTION_ERROR"
 ERR_REQUEST_ERROR = "REQUEST_ERROR"
+ERR_PARSE_ERROR = "PARSE_ERROR"
 
 # ─── 画像前処理パラメータ ───────────────────────────
 MAX_IMAGE_PIXELS = 20_000_000  # 最大ピクセル数（約80MB RAM相当）
@@ -289,7 +290,16 @@ def detect_content(image_b64, mode="text", request_id=""):
                 "message": f"Vision APIエラー (ステータス {response.status_code})",
             }
 
-        result = response.json()
+        try:
+            result = response.json()
+        except (ValueError, TypeError) as parse_err:
+            logger.error("[%s] APIレスポンスのJSONパースに失敗: %s (先頭200文字: %.200s)",
+                         request_id, parse_err, response.text)
+            return {
+                "ok": False, "data": [], "image_size": None,
+                "error_code": ERR_PARSE_ERROR,
+                "message": "APIレスポンスの解析に失敗しました",
+            }
         responses = result.get("responses", [])
         logger.info("Vision API レスポンス keys: %s", list(responses[0].keys()) if responses else "empty")
         if not responses:

@@ -369,6 +369,17 @@ def _validate_analyze_request():
     return image_data, mode, None
 
 
+@app.route("/api/analyze", methods=["OPTIONS"])
+def analyze_preflight():
+    """CORSプリフライトリクエストを明示的に処理する。
+
+    after_request でCORSヘッダーを付与しているが、OPTIONSを明示しないと
+    一部のWSGIサーバー（gunicorn等）が405を返す環境差分がある。
+    空の204レスポンスを返し、after_requestがCORSヘッダーを付与する。
+    """
+    return "", 204
+
+
 @app.route("/api/analyze", methods=["POST"])
 def analyze_endpoint():
     """

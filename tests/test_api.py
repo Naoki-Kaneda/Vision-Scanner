@@ -603,6 +603,27 @@ class TestCors:
         response = client.get("/", headers={"Origin": "https://evil.example.com"})
         assert "Access-Control-Allow-Origin" not in response.headers
 
+    @patch("app.ALLOWED_ORIGINS", ["https://trusted.example.com"])
+    def test_OPTIONSプリフライトが204を返す(self, client):
+        """許可されたOriginからのOPTIONSリクエストが204+CORSヘッダーを返すこと。"""
+        response = client.options(
+            "/api/analyze",
+            headers={"Origin": "https://trusted.example.com"},
+        )
+        assert response.status_code == 204
+        assert response.headers.get("Access-Control-Allow-Origin") == "https://trusted.example.com"
+        assert "POST" in response.headers.get("Access-Control-Allow-Methods", "")
+        assert "Content-Type" in response.headers.get("Access-Control-Allow-Headers", "")
+
+    def test_ALLOWED_ORIGINS未設定のOPTIONSは204だがCORSヘッダーなし(self, client):
+        """ALLOWED_ORIGINS未設定時はOPTIONSは204を返すがCORSヘッダーは付かないこと。"""
+        response = client.options(
+            "/api/analyze",
+            headers={"Origin": "https://any.example.com"},
+        )
+        assert response.status_code == 204
+        assert "Access-Control-Allow-Origin" not in response.headers
+
 
 # ─── レート制限設定API テスト ───────────────────────────
 class TestRateLimitsConfig:

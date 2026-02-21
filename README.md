@@ -105,6 +105,27 @@ python3 app.py
 ### モード切替
 - **テキスト**: 文字を読み取る（OCR）
 - **物体**: 映っている物体を検出
+- **ラベル**: ラベル・シールの有無を判定
+- **顔検出**: 顔の位置と感情を分析
+- **ロゴ**: ブランドロゴを検出
+- **分類**: 画像全体をカテゴリ分類
+- **Web検索**: Web上の類似画像を検索
+
+### モード別レスポンス仕様
+
+`POST /api/analyze` のレスポンスはモードにより固有フィールドが追加されます。
+
+| モード | `data` 内容 | 固有フィールド | `image_size` |
+|--------|-------------|---------------|-------------|
+| `text` | `{label, bounds}` テキストブロック | なし | `[w, h]` px |
+| `object` | `{label, bounds}` 正規化座標(0-1) | なし | `null` |
+| `label` | `{label, bounds}` テキスト検出結果 | `label_detected` (bool), `label_reason` (str) | `[w, h]` or `null` |
+| `face` | `{label, bounds, emotions, confidence}` | なし | `[w, h]` px |
+| `logo` | `{label, bounds}` ピクセル座標 | なし | `[w, h]` px |
+| `classify` | `{label, score}` 座標なし | なし | `null` |
+| `web` | `{label}` 推定ラベル | `web_detail` ({best_guess, entities, pages, similar_images}) | `null` |
+
+共通フィールド: `ok` (bool), `data` (list), `error_code` (str\|null), `message` (str\|null)
 
 ## テスト
 
