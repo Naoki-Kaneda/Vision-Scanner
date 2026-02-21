@@ -544,6 +544,82 @@ video {
     font-weight: 700;
 }
 
+/* ─── ヘルプ内設定セクション ──────────────────── */
+.help-settings {
+    padding: 10px 16px 8px;
+    border-top: 1px solid var(--md-outline-variant);
+    margin-top: 4px;
+}
+
+.help-settings-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--md-primary);
+    margin-bottom: 8px;
+    letter-spacing: 0.05em;
+}
+
+.help-setting-item label {
+    font-size: 0.78rem;
+    color: var(--md-on-surface);
+    font-weight: 500;
+}
+
+.help-setting-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.help-setting-control input[type="range"] {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--md-outline-variant);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+}
+
+.help-setting-control input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--md-primary);
+    border: 2px solid var(--md-surface);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+}
+
+.help-setting-control input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--md-primary);
+    border: 2px solid var(--md-surface);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+}
+
+.help-setting-value {
+    font-size: 0.78rem;
+    color: var(--md-primary);
+    font-weight: 600;
+    min-width: 28px;
+    text-align: right;
+}
+
+.help-setting-desc {
+    font-size: 0.68rem;
+    color: var(--md-outline);
+    margin: 4px 0 0;
+    line-height: 1.4;
+}
+
 .help-version {
     padding: 8px 16px 12px;
     font-size: 0.68rem;

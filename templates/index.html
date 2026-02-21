@@ -105,6 +105,17 @@
                             <p>類似画像をWeb上から検索し、推定名・関連ページ・類似画像のリンクを表示します。</p>
                         </div>
                     </div>
+                    <div class="help-settings">
+                        <div class="help-settings-title">設定</div>
+                        <div class="help-setting-item">
+                            <label for="duplicate-skip-count">重複スキップ回数</label>
+                            <div class="help-setting-control">
+                                <input type="range" id="duplicate-skip-count" min="1" max="5" value="2" step="1">
+                                <span id="duplicate-skip-value" class="help-setting-value">2回</span>
+                            </div>
+                            <p class="help-setting-desc">同じ内容を指定回数読み取ったら、カメラが動くまで一時停止します。</p>
+                        </div>
+                    </div>
                     <div class="help-version">
                         Vision AI Scanner v1.3.0
                     </div>
