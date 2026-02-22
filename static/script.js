@@ -528,6 +528,35 @@ function scanLoop() {
     requestAnimationFrame(scanLoop);
 }
 
+/** フレーム間の平均ピクセル差分を計算する。初回フレームは 0 を返す。 */
+function _calcFrameDiff(currentFrameData) {
+    if (!lastFrameData) return 0;
+    let diff = 0;
+    for (let i = 0; i < currentFrameData.length; i += 4) {
+        diff += Math.abs(currentFrameData[i] - lastFrameData[i]);
+        diff += Math.abs(currentFrameData[i + 1] - lastFrameData[i + 1]);
+        diff += Math.abs(currentFrameData[i + 2] - lastFrameData[i + 2]);
+    }
+    return diff / (motionCanvas.width * motionCanvas.height);
+}
+
+/** カメラ動作を検出した際の重複状態リセット処理。 */
+function _handleMotionDetected() {
+    stabilityCounter = 0;
+    if (isDuplicatePaused || duplicateCount > 0) {
+        isDuplicatePaused = false;
+        duplicateCount = 0;
+        lastResultFingerprint = null;
+        if (statusText) statusText.textContent = 'スキャン中';
+        updateDupSkipBadge();
+    }
+    if (stabilityBarFill) {
+        stabilityBarFill.style.width = '0%';
+        stabilityBarFill.classList.remove('captured');
+    }
+    lastStabilityState = 'moving';
+}
+
 /**
  * フレーム間差分で安定状態を検出し、安定したらキャプチャする。
  * statusText は状態遷移時のみ更新（チラつき防止）。進捗はプログレスバーのみ。
@@ -538,17 +567,10 @@ function checkStabilityAndCapture() {
 
     // 再利用キャンバスでフレーム差分を計算
     motionCtx.drawImage(video, 0, 0, motionCanvas.width, motionCanvas.height);
-
     const currentFrameData = motionCtx.getImageData(0, 0, motionCanvas.width, motionCanvas.height).data;
 
     if (lastFrameData) {
-        let diff = 0;
-        for (let i = 0; i < currentFrameData.length; i += 4) {
-            diff += Math.abs(currentFrameData[i] - lastFrameData[i]);
-            diff += Math.abs(currentFrameData[i + 1] - lastFrameData[i + 1]);
-            diff += Math.abs(currentFrameData[i + 2] - lastFrameData[i + 2]);
-        }
-        const avgDiff = diff / (motionCanvas.width * motionCanvas.height);
+        const avgDiff = _calcFrameDiff(currentFrameData);
 
         if (avgDiff < MOTION_THRESHOLD) {
             // 安定状態
@@ -596,22 +618,7 @@ function checkStabilityAndCapture() {
                 }, resetDelay);
             }
         } else {
-            // 動きを検出 → カウンターリセット
-            stabilityCounter = 0;
-            // 重複一時停止中にカメラが動いたら解除
-            if (isDuplicatePaused || duplicateCount > 0) {
-                isDuplicatePaused = false;
-                duplicateCount = 0;
-                lastResultFingerprint = null;
-                if (statusText) statusText.textContent = 'スキャン中';
-                updateDupSkipBadge();
-            }
-            if (stabilityBarFill) {
-                stabilityBarFill.style.width = '0%';
-                stabilityBarFill.classList.remove('captured');
-            }
-            // テキストは変更しない（バーが0%に戻ることで動き検出を表現）
-            lastStabilityState = 'moving';
+            _handleMotionDetected();
         }
     }
 
@@ -927,6 +934,20 @@ function updateDupSkipBadge() {
 // 結果表示・フィルター
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+/** 結果リストのプレースホルダーを除去する。 */
+function _removePlaceholder() {
+    const placeholder = document.querySelector('.placeholder-text');
+    if (placeholder) placeholder.remove();
+}
+
+/** 現在時刻のタイムスタンプ span 要素を生成する。 */
+function _createTimestampSpan() {
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'timestamp';
+    timeSpan.textContent = `[${new Date().toLocaleTimeString()}]`;
+    return timeSpan;
+}
+
 /** ノイズや短すぎる結果を除外するフィルター。 */
 function isValidResult(item) {
     const text = item.label || '';
@@ -943,24 +964,12 @@ function addResultItem(item) {
     const cleanText = (item.label || '').trim();
     if (!cleanText) return;
 
-    const timeStr = new Date().toLocaleTimeString();
-
-    // プレースホルダーを除去
-    const placeholder = document.querySelector('.placeholder-text');
-    if (placeholder) placeholder.remove();
+    _removePlaceholder();
 
     const div = document.createElement('div');
     div.className = 'result-item';
-
-    // XSS対策: innerHTML ではなく DOM操作でテキストを挿入する
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'timestamp';
-    timeSpan.textContent = `[${timeStr}]`;
-
-    const textNode = document.createTextNode(` ${cleanText}`);
-
-    div.appendChild(timeSpan);
-    div.appendChild(textNode);
+    div.appendChild(_createTimestampSpan());
+    div.appendChild(document.createTextNode(` ${cleanText}`));
     resultList.prepend(div);
 }
 
@@ -970,15 +979,11 @@ function addResultItem(item) {
  * @param {string} reason - 判定理由
  */
 function addLabelResult(detected, reason) {
-    const timeStr = new Date().toLocaleTimeString();
     const status = detected ? 'ok' : 'ng';
     const labelText = detected ? 'OK' : 'NG';
 
-    // プレースホルダーを除去
-    const placeholder = document.querySelector('.placeholder-text');
-    if (placeholder) placeholder.remove();
+    _removePlaceholder();
 
-    // XSS対策: DOM操作でテキストを挿入
     const div = document.createElement('div');
     div.className = `label-result ${status}`;
 
@@ -989,15 +994,11 @@ function addLabelResult(detected, reason) {
     const detail = document.createElement('div');
     detail.className = 'label-detail';
 
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'timestamp';
-    timeSpan.textContent = `[${timeStr}]`;
-
     const reasonSpan = document.createElement('span');
     reasonSpan.className = 'reason';
     reasonSpan.textContent = reason;
 
-    detail.appendChild(timeSpan);
+    detail.appendChild(_createTimestampSpan());
     detail.appendChild(reasonSpan);
     div.appendChild(badge);
     div.appendChild(detail);
@@ -1009,9 +1010,7 @@ function addLabelResult(detected, reason) {
  * @param {Object} item - {label, bounds, emotions, confidence}
  */
 function addFaceResult(item) {
-    const timeStr = new Date().toLocaleTimeString();
-    const placeholder = document.querySelector('.placeholder-text');
-    if (placeholder) placeholder.remove();
+    _removePlaceholder();
 
     const div = document.createElement('div');
     div.className = 'face-result';
@@ -1019,13 +1018,10 @@ function addFaceResult(item) {
     // ヘッダー: タイムスタンプ + 確信度
     const header = document.createElement('div');
     header.className = 'face-header';
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'timestamp';
-    timeSpan.textContent = `[${timeStr}]`;
     const confSpan = document.createElement('span');
     confSpan.className = 'face-confidence';
     confSpan.textContent = `確信度: ${(item.confidence * 100).toFixed(0)}%`;
-    header.appendChild(timeSpan);
+    header.appendChild(_createTimestampSpan());
     header.appendChild(confSpan);
 
     // 感情グリッド（2x2）
@@ -1070,17 +1066,11 @@ function addFaceResult(item) {
  * @param {Array} items - [{label, score}, ...]
  */
 function addClassifyResult(items) {
-    const timeStr = new Date().toLocaleTimeString();
-    const placeholder = document.querySelector('.placeholder-text');
-    if (placeholder) placeholder.remove();
+    _removePlaceholder();
 
     const wrapper = document.createElement('div');
     wrapper.className = 'result-item';
-
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'timestamp';
-    timeSpan.textContent = `[${timeStr}]`;
-    wrapper.appendChild(timeSpan);
+    wrapper.appendChild(_createTimestampSpan());
 
     const tagContainer = document.createElement('div');
     tagContainer.className = 'classify-result';
@@ -1112,17 +1102,11 @@ function addClassifyResult(items) {
  * @param {Array} data - 統一データ形式（フォールバック用）
  */
 function addWebResult(webDetail, data) {
-    const timeStr = new Date().toLocaleTimeString();
-    const placeholder = document.querySelector('.placeholder-text');
-    if (placeholder) placeholder.remove();
+    _removePlaceholder();
 
     const div = document.createElement('div');
     div.className = 'web-result';
-
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'timestamp';
-    timeSpan.textContent = `[${timeStr}]`;
-    div.appendChild(timeSpan);
+    div.appendChild(_createTimestampSpan());
 
     // ベストゲス（推定名）
     if (webDetail.best_guess) {
@@ -1200,20 +1184,12 @@ function addWebResult(webDetail, data) {
  * @param {string} message - 表示するメッセージ
  */
 function addNoResultMessage(message) {
-    const placeholder = document.querySelector('.placeholder-text');
-    if (placeholder) placeholder.remove();
+    _removePlaceholder();
 
     const div = document.createElement('div');
     div.className = 'result-item';
-    const timeStr = new Date().toLocaleTimeString();
-
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'timestamp';
-    timeSpan.textContent = `[${timeStr}]`;
-
-    const textNode = document.createTextNode(` ${message}`);
-    div.appendChild(timeSpan);
-    div.appendChild(textNode);
+    div.appendChild(_createTimestampSpan());
+    div.appendChild(document.createTextNode(` ${message}`));
     resultList.prepend(div);
 }
 

@@ -151,7 +151,7 @@ class TestDetectContentPartialError:
             }]
         })
         from vision_api import detect_content
-        result = detect_content(make_b64(), mode="object")
+        detect_content(make_b64(), mode="object")
         # 注釈なし（objectモードなのでlocalizedObjectAnnotationsが空）→ ok=False
         # ここではtextモードで注釈ありを直接テスト
         result_text = detect_content(make_b64(), mode="text")

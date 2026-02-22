@@ -209,40 +209,6 @@ def add_security_headers(response):
     return response
 
 
-# ─── Flaskエラーハンドラ（統一JSONレスポンス） ─────
-@app.errorhandler(413)
-def handle_request_too_large(_e):
-    """リクエストボディが MAX_CONTENT_LENGTH を超えた場合のJSONレスポンス。"""
-    return jsonify({
-        "ok": False,
-        "data": [],
-        "error_code": ERR_REQUEST_TOO_LARGE,
-        "message": f"リクエストサイズが上限({MAX_REQUEST_BODY // (1024*1024)}MB)を超えています",
-    }), 413
-
-
-@app.errorhandler(400)
-def handle_bad_request(_e):
-    """Flaskが投げる400エラーのJSONレスポンス。"""
-    return jsonify({
-        "ok": False,
-        "data": [],
-        "error_code": ERR_BAD_REQUEST,
-        "message": "不正なリクエストです",
-    }), 400
-
-
-@app.errorhandler(405)
-def handle_method_not_allowed(_e):
-    """許可されていないHTTPメソッドのJSONレスポンス。"""
-    return jsonify({
-        "ok": False,
-        "data": [],
-        "error_code": ERR_METHOD_NOT_ALLOWED,
-        "message": "許可されていないHTTPメソッドです",
-    }), 405
-
-
 # ─── レスポンスヘルパー ────────────────────────────
 def _error_response(error_code, message, status_code=400):
     """標準化されたエラーレスポンスを生成する。"""
@@ -252,6 +218,29 @@ def _error_response(error_code, message, status_code=400):
         "error_code": error_code,
         "message": message,
     }), status_code
+
+
+# ─── Flaskエラーハンドラ（_error_response で統一） ─────
+@app.errorhandler(413)
+def handle_request_too_large(_e):
+    """リクエストボディが MAX_CONTENT_LENGTH を超えた場合のJSONレスポンス。"""
+    return _error_response(
+        ERR_REQUEST_TOO_LARGE,
+        f"リクエストサイズが上限({MAX_REQUEST_BODY // (1024*1024)}MB)を超えています",
+        413,
+    )
+
+
+@app.errorhandler(400)
+def handle_bad_request(_e):
+    """Flaskが投げる400エラーのJSONレスポンス。"""
+    return _error_response(ERR_BAD_REQUEST, "不正なリクエストです", 400)
+
+
+@app.errorhandler(405)
+def handle_method_not_allowed(_e):
+    """許可されていないHTTPメソッドのJSONレスポンス。"""
+    return _error_response(ERR_METHOD_NOT_ALLOWED, "許可されていないHTTPメソッドです", 405)
 
 
 def _log(level, event, **kwargs):
