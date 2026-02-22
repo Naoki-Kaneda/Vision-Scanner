@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 echo "=== Vision AI Scanner 起動 ==="
 
+# .envからAPP_PORTを読み込み（未設定なら5001: Gemini版と共存するため）
+if [ -f .env ]; then
+    APP_PORT=$(grep -E '^APP_PORT=' .env 2>/dev/null | cut -d= -f2)
+fi
+APP_PORT="${APP_PORT:-5001}"
+export APP_PORT
+
 CERT_DIR="certs"
 CERT_FILE="$CERT_DIR/server.crt"
 KEY_FILE="$CERT_DIR/server.key"
@@ -34,16 +41,37 @@ fi
 export SSL_CERT_PATH="$CERT_FILE"
 export SSL_KEY_PATH="$KEY_FILE"
 
-# ポート5000を使用中のプロセスを確認・停止
-PID=$(lsof -ti :5000 2>/dev/null)
-if [ -n "$PID" ]; then
-    echo "[!] ポート5000を使用中のプロセス(PID:${PID})を停止します..."
-    kill -9 $PID 2>/dev/null
-    sleep 1
+# 指定ポートを使用中のプロセスを確認・停止（安全確認付き）
+PIDS=$(lsof -ti :"$APP_PORT" 2>/dev/null)
+if [ -n "$PIDS" ]; then
+    echo "[!] ポート${APP_PORT}を使用中のプロセスが見つかりました:"
+    for PID in $PIDS; do
+        PROC_NAME=$(ps -p "$PID" -o comm= 2>/dev/null || echo "不明")
+        echo "    PID: ${PID}  プロセス名: ${PROC_NAME}"
+    done
+    read -r -p "これらのプロセスを停止しますか？ (y/N): " ANSWER
+    if [ "$ANSWER" = "y" ] || [ "$ANSWER" = "Y" ]; then
+        for PID in $PIDS; do
+            kill "$PID" 2>/dev/null
+        done
+        sleep 1
+        REMAINING=$(lsof -ti :"$APP_PORT" 2>/dev/null)
+        if [ -n "$REMAINING" ]; then
+            echo "[!] graceful停止に失敗したプロセスを強制終了します..."
+            for PID in $REMAINING; do
+                kill -9 "$PID" 2>/dev/null
+            done
+            sleep 1
+        fi
+        echo "[OK] プロセスを停止しました。"
+    else
+        echo "[中止] プロセスの停止をキャンセルしました。ポート${APP_PORT}が使用中のため起動できません。"
+        exit 1
+    fi
 fi
 
 # サーバーIPを表示
 SERVER_IP=$(hostname -I | awk '{print $1}')
 echo "[OK] HTTPS モードで起動中..."
-echo "     アクセスURL: https://${SERVER_IP}:5000"
+echo "     アクセスURL: https://${SERVER_IP}:${APP_PORT}"
 python app.py
