@@ -7,8 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Vision AI Scanner — カメラ映像からリアルタイムでテキスト抽出（OCR）・物体検出を行うWebアプリケーション。
 
 - **本番URL**: https://vision-scanner.onrender.com/
-- **ホスティング**: Render（`render.yaml` で構成、gunicorn起動）
+- **ホスティング**: Render（`render.yaml` で構成、`gunicorn app:app --workers 2 --timeout 30`）
 - **リポジトリ**: https://github.com/Naoki-Kaneda/Vision-Scanner.git
+- **Python**: 3.11+（CI: 3.11 / 3.12 / 3.13）
 
 ## 開発コマンド
 
@@ -20,7 +21,7 @@ venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
 
-# サーバー起動（http://localhost:5000）
+# サーバー起動（http://localhost:5001 ※APP_PORTで変更可）
 python app.py
 
 # テスト実行
@@ -58,9 +59,33 @@ pip-audit
 ### バックエンド（Python/Flask）
 
 - **`app.py`**: Flaskエントリーポイント。`/api/analyze`でリクエストバリデーション（Base64検証、MIMEマジックバイト検証、サイズ上限5MB、モード列挙チェック）とIP単位レート制限を行う。ルートハンドラは薄く保ち、ロジックは`vision_api.py`に委譲。`before_request`で相関ID(`g.request_id`)とCSPノンス(`g.csp_nonce`)を生成。
-- **`vision_api.py`**: Google Cloud Vision APIクライアント。`detect_content()`が単一エントリーポイント。テキストモードでは画像前処理（Pillow: コントラスト+シャープネス強調）を適用。`requests.Session`をモジュールレベルで共有し、リトライ戦略（3回、指数バックオフ、429/5xx再試行）を組み込み。APIキーは`x-goog-api-key`ヘッダーで送信（URLパラメータ不使用）。
-- **`rate_limiter.py`**: Redis接続時はLuaスクリプトで原子的操作（マルチプロセス安全）、未接続時はインメモリ(TTLCache)にフォールバック。公開API: `try_consume_request()` / `release_request()`。API失敗時は`release_request()`で予約を取り消し、ユーザーのクォータを消費しない。
+- **`vision_api.py`**: Google Cloud Vision APIクライアント。`detect_content(image_b64, mode)`が単一エントリーポイント。テキストモードでは画像前処理（Pillow: コントラスト+シャープネス強調）を適用。`requests.Session`をモジュールレベルで共有し、リトライ戦略（3回、指数バックオフ、429/5xx再試行）を組み込み。APIキーは`x-goog-api-key`ヘッダーで送信（URLパラメータ不使用）。
+- **`rate_limiter.py`**: Redis接続時はLuaスクリプトで原子的操作（マルチプロセス安全）、未接続時はインメモリ(TTLCache)にフォールバック。公開API: `try_consume_request()` / `release_request()` / `get_daily_count()` / `get_backend_type()`。API失敗時は`release_request()`で予約を取り消し、ユーザーのクォータを消費しない。
 - **`translations.py`**: 物体検出ラベルの英日翻訳辞書（`_parse_object_response()`で使用）。
+
+### Vision API モード
+
+| mode | Vision API Feature | 備考 |
+|------|--------------------|------|
+| `text` | `DOCUMENT_TEXT_DETECTION` | Pillow前処理あり、`imageContext.languageHints`付与 |
+| `object` | `OBJECT_LOCALIZATION` | 正規化座標（0〜1）で返却 |
+| `label` | `LABEL_DETECTION` + `OBJECT_LOCALIZATION` | 2機能同時リクエスト、`imageContext.languageHints`付与 |
+| `face` | `FACE_DETECTION` | 感情分析（joy/sorrow/anger/surprise） |
+| `logo` | `LOGO_DETECTION` | |
+| `classify` | `LABEL_DETECTION` | |
+| `web` | `WEB_DETECTION` | Web類似画像検索 |
+
+`imageContext`（`languageHints: ["en"]`）は `text` / `label` モードのみに付与（Google公式仕様準拠）。
+
+### APIレスポンス形式
+
+```json
+{"ok": true, "data": [...], "image_size": {...}, "error_code": null, "message": null}
+```
+
+- 部分成功時（API部分エラー + 注釈あり）: `ok=true` + `"warnings": ["VISION_14: ..."]`
+- 部分エラー + 注釈なし: `ok=false` + `error_code` / `message`
+- モード固有フィールド: `label_detected` / `label_reason`（label）、`web_detail`（web）
 
 ### フロントエンド（バニラJS — フレームワーク不使用）
 
@@ -78,23 +103,25 @@ pip-audit
 
 ### CI/CD
 
-- `.github/workflows/ci.yml`: pytest + ruff + bandit + pip-audit
+- `.github/workflows/ci.yml`: pytest（Python 3.11/3.12/3.13） + ruff + bandit + pip-audit + detect-secrets
 - `.github/workflows/secrets-scan.yml`: シークレットスキャン
 - `.github/dependabot.yml`: pip依存+GitHub Actions週次チェック
 - Renderへの自動デプロイ: mainブランチへのpushで自動反映
 
 ## テスト構成
 
-- `tests/test_api.py`: Flaskテストクライアントを使用したAPIエンドポイントテスト（正常OCR / 物体検出 / 不正入力 / API障害 / セキュリティヘッダー / CORS / request-id / MIME検証 / レート制限設定API / ヘルスチェック）
-- `tests/test_vision_api.py`: `vision_api.py`の単体テスト（HTTPエラー、タイムアウト、部分エラー、パーサー境界ケース、プロキシ状態4パターン回帰テスト）
+- `tests/test_api.py`: Flaskテストクライアントを使用したAPIエンドポイントテスト（正常OCR / 物体検出 / 不正入力 / API障害 / セキュリティヘッダー / CORS / request-id / MIME検証 / レート制限設定API / ヘルスチェック / ProxyHopsパース）
+- `tests/test_vision_api.py`: `vision_api.py`の単体テスト（HTTPエラー、タイムアウト、部分エラー・部分成功、パーサー境界ケース、プロキシ状態4パターン回帰テスト、imageContext制限テスト）
 - `tests/e2e/test_ui.py`: Playwright E2Eテスト（ページ読み込み、モード切替、エラー表示、設定API反映検証）
-- `tests/conftest.py`: 共通フィクスチャ（Flaskテストクライアント等）
+- `tests/conftest.py`: 共通フィクスチャ（`client`フィクスチャ＝Flaskテストクライアント + レート制限リセット）
+- `tests/helpers.py`: テスト用ヘルパー関数（`create_valid_image_base64` / `create_valid_png_base64` / `make_b64` / `make_mock_response`）
 
 ## 環境変数（`.env`）
 
 | 変数 | 必須 | 説明 |
 |------|------|------|
 | `VISION_API_KEY` | Yes | Google Cloud Vision APIキー |
+| `APP_PORT` | No | サーバーポート（デフォルト`5001`） |
 | `PROXY_URL` | No | 企業プロキシURL |
 | `VERIFY_SSL` | No | SSL検証（デフォルト`true`） |
 | `FLASK_DEBUG` | No | デバッグモード（デフォルト`false`） |
@@ -107,7 +134,7 @@ pip-audit
 | `SSL_CERT_PATH` | No | SSL証明書ファイルパス（未設定=HTTP） |
 | `SSL_KEY_PATH` | No | SSL秘密鍵ファイルパス（未設定=HTTP） |
 | `TRUST_PROXY` | No | リバースプロキシ信頼（デフォルト`false`） |
-| `TRUST_PROXY_HOPS` | No | プロキシホップ数（デフォルト`1`、多段LB時に増やす） |
+| `TRUST_PROXY_HOPS` | No | プロキシホップ数（デフォルト`1`、不正値は1にフォールバック） |
 
 ## コーディング規約
 
@@ -115,7 +142,7 @@ pip-audit
 - コード内コメント・docstringは日本語
 - 変数名は英語（ローマ字禁止）
 - テスト名は日本語可（例: `test_テキスト抽出が正常に動作する`）
-- APIレスポンス形式: `{"ok": bool, "data": list, "error_code": str|None, "message": str|None}`
 - XSS対策: フロントエンドでは`innerHTML`ではなくDOM操作（`textContent`/`createTextNode`）を使用
 - CSP対策: HTML inline属性（onclick, style）禁止 → JSイベントリスナー/CSSクラスを使用
 - MVVMや継承パターンは使用しない
+- 環境変数の安全パース: `int()` 変換は `try/except` でフォールバック値を設定（`_parse_proxy_hops` パターン参照）
