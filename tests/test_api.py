@@ -6,7 +6,7 @@ Vision AI Scanner - APIエンドポイントのテスト。
 import os
 import base64
 from unittest.mock import patch
-from conftest import create_valid_image_base64, create_valid_png_base64
+from tests.helpers import create_valid_image_base64, create_valid_png_base64
 
 
 # ─── 正常系テスト ──────────────────────────────────
@@ -766,6 +766,18 @@ class TestHealthChecks:
         assert data["status"] == "ok"
         assert data["checks"]["rate_limiter_ok"] is True
         assert "warnings" not in data
+
+    def test_readyzにプロキシ設定が含まれる(self, client):
+        """readyz の checks に trust_proxy と trust_proxy_hops が含まれること。"""
+        response = client.get("/readyz")
+        assert response.status_code == 200
+        data = response.get_json()
+        checks = data["checks"]
+        assert "trust_proxy" in checks
+        assert isinstance(checks["trust_proxy"], bool)
+        assert "trust_proxy_hops" in checks
+        assert isinstance(checks["trust_proxy_hops"], int)
+        assert checks["trust_proxy_hops"] >= 1
 
 
 # ─── ADMIN_SECRET 強度チェック テスト ──────────────────

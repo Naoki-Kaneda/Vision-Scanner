@@ -6,7 +6,7 @@ vision_api.py の単体テスト。
 import pytest
 from unittest.mock import patch
 from requests.exceptions import Timeout, ConnectionError as RequestsConnectionError, RequestException
-from conftest import make_b64, make_mock_response
+from tests.helpers import make_b64, make_mock_response
 
 
 # ─── detect_content: モード不正値 ─────────────────
@@ -107,8 +107,8 @@ class TestDetectContentPartialError:
     """HTTP 200 だが responses[0].error がある場合のテスト。"""
 
     @patch("vision_api.session.post")
-    def test_部分エラーはokFalseを返す(self, mock_post):
-        """HTTP 200 でも responses[0].error があれば ok=False を返すこと。"""
+    def test_部分エラーで注釈なしはokFalseを返す(self, mock_post):
+        """error のみで注釈が空の場合は ok=False を返すこと。"""
         mock_post.return_value = make_mock_response(status_code=200, json_data={
             "responses": [{
                 "error": {
@@ -122,6 +122,90 @@ class TestDetectContentPartialError:
         assert result["ok"] is False
         assert "VISION_400" in result["error_code"]
         assert "Bad image data" in result["message"]
+
+    @patch("vision_api.session.post")
+    def test_部分エラーで注釈ありはokTrueとwarningsを返す(self, mock_post):
+        """error と注釈が共存する場合は ok=True + warnings を返すこと。"""
+        mock_post.return_value = make_mock_response(status_code=200, json_data={
+            "responses": [{
+                "error": {
+                    "code": 14,
+                    "message": "Partial failure",
+                },
+                "textAnnotations": [
+                    {
+                        "description": "Hello World",
+                        "boundingPoly": {"vertices": [
+                            {"x": 0, "y": 0}, {"x": 100, "y": 0},
+                            {"x": 100, "y": 50}, {"x": 0, "y": 50},
+                        ]},
+                    },
+                    {
+                        "description": "Hello",
+                        "boundingPoly": {"vertices": [
+                            {"x": 0, "y": 0}, {"x": 50, "y": 0},
+                            {"x": 50, "y": 25}, {"x": 0, "y": 25},
+                        ]},
+                    },
+                ],
+            }]
+        })
+        from vision_api import detect_content
+        result = detect_content(make_b64(), mode="object")
+        # 注釈なし（objectモードなのでlocalizedObjectAnnotationsが空）→ ok=False
+        # ここではtextモードで注釈ありを直接テスト
+        result_text = detect_content(make_b64(), mode="text")
+        assert result_text["ok"] is True
+        assert "warnings" in result_text
+        assert len(result_text["warnings"]) == 1
+        assert "VISION_14" in result_text["warnings"][0]
+        assert len(result_text["data"]) == 1  # textAnnotations[1:]
+
+
+# ─── detect_content: imageContext のモード制限 ────────
+class TestImageContextRestriction:
+    """imageContext が text/label モードのみに付与されることのテスト。"""
+
+    @patch("vision_api.session.post")
+    def test_objectモードでpayloadにimageContextが含まれない(self, mock_post):
+        """mode=object の場合、APIリクエストに imageContext が含まれないこと。"""
+        mock_post.return_value = make_mock_response(status_code=200, json_data={
+            "responses": [{"localizedObjectAnnotations": []}]
+        })
+        from vision_api import detect_content
+        detect_content(make_b64(), mode="object")
+        # session.post に渡された json ペイロードを取得
+        call_kwargs = mock_post.call_args
+        payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
+        request_item = payload["requests"][0]
+        assert "imageContext" not in request_item
+
+    @patch("vision_api.session.post")
+    def test_textモードでpayloadにimageContextが含まれる(self, mock_post):
+        """mode=text の場合、APIリクエストに imageContext.languageHints が含まれること。"""
+        mock_post.return_value = make_mock_response(status_code=200, json_data={
+            "responses": [{"textAnnotations": []}]
+        })
+        from vision_api import detect_content
+        detect_content(make_b64(), mode="text")
+        call_kwargs = mock_post.call_args
+        payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
+        request_item = payload["requests"][0]
+        assert "imageContext" in request_item
+        assert "languageHints" in request_item["imageContext"]
+
+    @patch("vision_api.session.post")
+    def test_faceモードでpayloadにimageContextが含まれない(self, mock_post):
+        """mode=face の場合、APIリクエストに imageContext が含まれないこと。"""
+        mock_post.return_value = make_mock_response(status_code=200, json_data={
+            "responses": [{"faceAnnotations": []}]
+        })
+        from vision_api import detect_content
+        detect_content(make_b64(), mode="face")
+        call_kwargs = mock_post.call_args
+        payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
+        request_item = payload["requests"][0]
+        assert "imageContext" not in request_item
 
 
 # ─── パーサー境界ケース ───────────────────────────

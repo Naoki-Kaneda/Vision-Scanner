@@ -96,10 +96,13 @@ JPEG_QUALITY = 95              # JPEG保存品質
 
 
 # ─── レスポンスビルダー（辞書構築の一元化） ───────────────
-def _make_success(data, image_size=None, **extra):
-    """成功レスポンス辞書を生成する。"""
-    return {"ok": True, "data": data, "image_size": image_size,
-            "error_code": None, "message": None, **extra}
+def _make_success(data, image_size=None, warnings=None, **extra):
+    """成功レスポンス辞書を生成する。warningsがあれば部分成功として併記。"""
+    result = {"ok": True, "data": data, "image_size": image_size,
+              "error_code": None, "message": None, **extra}
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 def _make_error(error_code, message):
@@ -279,15 +282,15 @@ def detect_content(image_b64, mode="text", request_id=""):
             logger.warning("前処理をスキップ（画像強調のみ省略）: %s", e)
 
     # APIリクエストペイロード
-    payload = {
-        "requests": [
-            {
-                "image": {"content": image_b64},
-                "features": features,
-                "imageContext": {"languageHints": LANGUAGE_HINTS},
-            }
-        ]
+    # languageHints はテキスト検出向け仕様のため、text/label モードのみ付与する
+    request_item = {
+        "image": {"content": image_b64},
+        "features": features,
     }
+    if mode in ("text", "label"):
+        request_item["imageContext"] = {"languageHints": LANGUAGE_HINTS}
+
+    payload = {"requests": [request_item]}
 
     try:
         # APIキーはヘッダーで送信（URLパラメータだとプロキシログに記録されるリスク回避）
@@ -314,13 +317,15 @@ def detect_content(image_b64, mode="text", request_id=""):
             return _make_success([])
 
         # HTTP 200 でも responses[0] 内部にエラーが入る場合がある（Vision API の仕様）
+        # ただし error と注釈が共存するケースがあるため、注釈を優先し warnings で警告する
         response_item = responses[0]
         partial_error = response_item.get("error")
+        partial_warnings = None
         if partial_error:
             code = partial_error.get("code", "UNKNOWN")
             msg = partial_error.get("message", "Vision API 内部エラー")
-            logger.error("[%s] Vision API 部分エラー (mode=%s, code=%s): %s", request_id, mode, code, msg)
-            return _make_error(f"VISION_{code}", msg)
+            logger.warning("[%s] Vision API 部分エラー (mode=%s, code=%s): %s", request_id, mode, code, msg)
+            partial_warnings = [f"VISION_{code}: {msg}"]
 
         if mode == "text":
             data, image_size = _parse_text_response(response_item)
@@ -328,7 +333,10 @@ def detect_content(image_b64, mode="text", request_id=""):
         elif mode == "label":
             data, image_size, label_detected, label_reason = _parse_label_response(response_item)
             logger.info("ラベル検出結果: detected=%s, reason=%s", label_detected, label_reason)
-            return _make_success(data, image_size, label_detected=label_detected, label_reason=label_reason)
+            if partial_warnings and not data:
+                return _make_error(f"VISION_{code}", msg)
+            return _make_success(data, image_size, warnings=partial_warnings,
+                                 label_detected=label_detected, label_reason=label_reason)
         elif mode == "face":
             image_size = _get_image_dimensions(image_b64)
             data = _parse_face_response(response_item)
@@ -345,13 +353,19 @@ def detect_content(image_b64, mode="text", request_id=""):
             data, web_detail = _parse_web_response(response_item)
             image_size = None
             logger.info("Web検索結果: entities=%d件", len(web_detail.get("entities", [])))
-            return _make_success(data, web_detail=web_detail)
+            if partial_warnings and not data:
+                return _make_error(f"VISION_{code}", msg)
+            return _make_success(data, warnings=partial_warnings, web_detail=web_detail)
         else:
             data = _parse_object_response(response_item)
             image_size = None  # 物体モードは正規化座標（0〜1）を使用
             logger.info("物体検出結果: %d件", len(data))
 
-        return _make_success(data, image_size)
+        # 部分エラーあり + 注釈データなし → 完全失敗
+        if partial_warnings and not data:
+            return _make_error(f"VISION_{code}", msg)
+
+        return _make_success(data, image_size, warnings=partial_warnings)
 
     except requests.exceptions.Timeout:
         logger.error("[%s] Vision API タイムアウト (mode=%s)", request_id, mode)

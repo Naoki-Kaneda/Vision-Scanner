@@ -136,8 +136,13 @@ def inject_template_globals():
 
 # プロキシ配下でのIP取得を正しく行う（X-Forwarded-For対応）
 TRUST_PROXY = os.getenv("TRUST_PROXY", "false").lower() == "true"
+TRUST_PROXY_HOPS = int(os.getenv("TRUST_PROXY_HOPS", "1"))
 if TRUST_PROXY:
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=TRUST_PROXY_HOPS, x_proto=TRUST_PROXY_HOPS,
+        x_host=TRUST_PROXY_HOPS, x_prefix=TRUST_PROXY_HOPS,
+    )
 
 
 # ─── リクエストコンテキスト（request-id / CSPノンス） ──
@@ -281,6 +286,8 @@ def readyz():
         "api_key_configured": bool(API_KEY),
         "rate_limiter_backend": rate_backend,
         "rate_limiter_ok": not redis_fallback,
+        "trust_proxy": TRUST_PROXY,
+        "trust_proxy_hops": TRUST_PROXY_HOPS,
     }
 
     warnings_list = []
