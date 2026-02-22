@@ -106,6 +106,8 @@ pip-audit
 | `RATE_LIMIT_DAILY` | No | 日次上限（デフォルト1000） |
 | `SSL_CERT_PATH` | No | SSL証明書ファイルパス（未設定=HTTP） |
 | `SSL_KEY_PATH` | No | SSL秘密鍵ファイルパス（未設定=HTTP） |
+| `TRUST_PROXY` | No | リバースプロキシ信頼（デフォルト`false`） |
+| `TRUST_PROXY_HOPS` | No | プロキシホップ数（デフォルト`1`、多段LB時に増やす） |
 
 ## コーディング規約
 

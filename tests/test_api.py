@@ -780,6 +780,36 @@ class TestHealthChecks:
         assert checks["trust_proxy_hops"] >= 1
 
 
+# ─── TRUST_PROXY_HOPS パースのテスト ───────────────────
+class TestParseProxyHops:
+    """_parse_proxy_hops() の入力バリデーションテスト。"""
+
+    def test_正常な整数文字列をパースできる(self):
+        """"2" → 2 を返すこと。"""
+        from app import _parse_proxy_hops
+        assert _parse_proxy_hops("2") == 2
+
+    def test_不正な文字列はデフォルト1を返す(self):
+        """"abc" → 1 にフォールバックすること。"""
+        from app import _parse_proxy_hops
+        assert _parse_proxy_hops("abc") == 1
+
+    def test_ゼロは1に矯正される(self):
+        """"0" → 1 に矯正されること。"""
+        from app import _parse_proxy_hops
+        assert _parse_proxy_hops("0") == 1
+
+    def test_負の値は1に矯正される(self):
+        """"-3" → 1 に矯正されること。"""
+        from app import _parse_proxy_hops
+        assert _parse_proxy_hops("-3") == 1
+
+    def test_Noneはデフォルト1を返す(self):
+        """None → 1 にフォールバックすること。"""
+        from app import _parse_proxy_hops
+        assert _parse_proxy_hops(None) == 1
+
+
 # ─── ADMIN_SECRET 強度チェック テスト ──────────────────
 class TestAdminSecretCheck:
     """起動時のADMIN_SECRET強度検証ロジックのテスト。"""

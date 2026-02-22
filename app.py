@@ -135,8 +135,21 @@ def inject_template_globals():
 
 
 # プロキシ配下でのIP取得を正しく行う（X-Forwarded-For対応）
+def _parse_proxy_hops(raw_value):
+    """TRUST_PROXY_HOPS の文字列を安全にパースする。不正値・0以下は 1 にフォールバック。"""
+    try:
+        hops = int(raw_value)
+    except (ValueError, TypeError):
+        logger.warning("TRUST_PROXY_HOPS の値が不正です (%r)。デフォルト 1 を使用します。", raw_value)
+        return 1
+    if hops <= 0:
+        logger.warning("TRUST_PROXY_HOPS が 0 以下 (%d) です。1 に矯正します。", hops)
+        return 1
+    return hops
+
+
 TRUST_PROXY = os.getenv("TRUST_PROXY", "false").lower() == "true"
-TRUST_PROXY_HOPS = int(os.getenv("TRUST_PROXY_HOPS", "1"))
+TRUST_PROXY_HOPS = _parse_proxy_hops(os.getenv("TRUST_PROXY_HOPS", "1"))
 if TRUST_PROXY:
     app.wsgi_app = ProxyFix(
         app.wsgi_app,
