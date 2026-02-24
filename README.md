@@ -86,6 +86,20 @@ source venv/bin/activate
 ./start.sh
 ```
 
+#### SSH切断後もバックグラウンドで動かす場合
+
+TeraTermなどSSH接続を閉じるとサーバーも停止します。バックグラウンドで動かすには以下を使います。
+
+```bash
+nohup ./start.sh > app.log 2>&1 &
+```
+
+| 操作 | コマンド |
+|------|---------|
+| ログ確認 | `tail -f app.log` |
+| サーバー停止 | `kill $(lsof -ti :5001)` |
+| 起動確認 | `ss -tlnp \| grep 5001` |
+
 #### LAN内の他のPCからカメラを使う場合（HTTPS）
 
 ブラウザのカメラ機能は、セキュリティ上 **HTTPS接続** でないと動作しません。
