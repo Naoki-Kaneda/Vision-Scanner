@@ -75,8 +75,8 @@ chmod +x start.sh
 ./start.sh
 ```
 
-`[OK] Flask起動中...` と表示されたら成功です。
-ブラウザで **http://localhost:5000** を開いてください。
+`[OK] HTTPS モードで起動中...` と表示されたら成功です。
+ブラウザで **https://localhost:5001** を開いてください（ポートは `APP_PORT` 環境変数で変更可）。
 
 #### 次回以降の起動（2回目から）
 
@@ -96,7 +96,7 @@ source venv/bin/activate
 1. Ubuntuサーバーで `start.sh` を実行すると、以下のようにアクセスURLが表示されます
    ```
    [OK] HTTPS モードで起動中...
-        アクセスURL: https://192.168.1.100:5000
+        アクセスURL: https://192.168.1.100:5001
    ```
 
 2. クライアントPCのブラウザで表示されたURLを開きます
@@ -171,7 +171,7 @@ start.bat
 またはダブルクリックでも起動できます。
 
 `[OK] Flask起動中...` と表示されたら成功です。
-ブラウザで **http://localhost:5000** を開いてください。
+ブラウザで **http://localhost:5001** を開いてください（ポートは `APP_PORT` 環境変数で変更可）。
 
 #### 次回以降の起動（2回目から）
 
@@ -212,7 +212,7 @@ pip install -r requirements-dev.txt
 | Ubuntu / Linux | `./start.sh`（または `python3 app.py`） |
 | Windows | `start.bat`（または `python app.py`） |
 
-ブラウザで **http://localhost:5000** にアクセスしてください。
+ブラウザで **https://localhost:5001**（Ubuntu）または **http://localhost:5001**（Windows）にアクセスしてください。
 
 ### プロキシ環境下での利用
 
@@ -462,5 +462,5 @@ localStorage.clear();
 - **フロントエンド**: HTML / CSS / JavaScript（バニラ）
 - **API**: Google Cloud Vision API
 - **テスト**: pytest / Playwright（E2E）
-- **CI**: GitHub Actions（pytest + ruff + bandit + pip-audit + detect-secrets）
+- **CI**: GitHub Actions（pytest + ruff + bandit + pip-audit + osv-scanner + detect-secrets）
 - **依存管理**: Dependabot（pip + GitHub Actions 週次チェック）
