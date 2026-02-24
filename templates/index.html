@@ -40,7 +40,7 @@
                 </div>
 
                 <div class="video-container">
-                    <video id="video-feed" autoplay playsinline muted></video>
+                    <video id="video-feed" autoplay playsinline muted aria-label="カメラ映像プレビュー"></video>
                     <canvas id="overlay-canvas"></canvas>
                     <div class="scan-overlay"></div>
                     <div class="target-box"></div>
@@ -51,8 +51,8 @@
                         <div class="stability-help">カメラを静止させてください</div>
                     </div>
                     <div class="video-tools">
-                        <button id="btn-flip-cam" class="tool-btn hidden" title="インカメ/外カメ切替">⟳ 外カメ</button>
-                        <button id="btn-mirror" class="tool-btn" title="左右反転">↔ 反転</button>
+                        <button id="btn-flip-cam" class="tool-btn hidden" title="インカメ/外カメ切替" aria-label="カメラを前面と背面で切り替える">⟳ 外カメ</button>
+                        <button id="btn-mirror" class="tool-btn" title="左右反転" aria-label="カメラ映像を左右反転する">↔ 反転</button>
                         <div class="mode-switch-group">
                             <div class="mode-switch">
                                 <button class="mode-btn active" id="mode-text">テキスト</button>
@@ -66,15 +66,15 @@
                                 <button class="mode-btn" id="mode-web">Web</button>
                             </div>
                         </div>
-                        <button id="btn-help" class="help-btn" title="モード説明">?</button>
+                        <button id="btn-help" class="help-btn" title="モード説明" aria-label="モードの説明を表示する">?</button>
                     </div>
                 </div>
 
                 <!-- ヘルプポップアップ（video-containerの外に配置し、overflow:hiddenの影響を回避） -->
-                <div id="help-popup" class="help-popup hidden">
+                <div id="help-popup" class="help-popup hidden" role="dialog" aria-label="モード説明ダイアログ">
                     <div class="help-popup-header">
                         <span class="help-popup-title">モード説明</span>
-                        <button id="btn-help-close" class="help-popup-close">&times;</button>
+                        <button id="btn-help-close" class="help-popup-close" aria-label="ヘルプを閉じる">&times;</button>
                     </div>
                     <div class="help-popup-body">
                         <div class="help-item">
@@ -123,8 +123,8 @@
                 </div>
 
                 <div class="action-bar">
-                    <button id="btn-scan" class="primary-btn">
-                        <span class="icon">▶</span> スタート
+                    <button id="btn-scan" class="primary-btn" aria-label="スキャンを開始する">
+                        <span class="icon" aria-hidden="true">▶</span> スタート
                     </button>
                 </div>
 
@@ -136,9 +136,9 @@
             <div class="panel result-panel">
                 <div class="panel-header">
                     <h2>検出結果</h2>
-                    <button id="btn-clear" class="clear-btn">クリア</button>
+                    <button id="btn-clear" class="clear-btn" aria-label="検出結果をクリアする">クリア</button>
                 </div>
-                <div id="result-list" class="result-list">
+                <div id="result-list" class="result-list" role="log" aria-live="polite" aria-label="検出結果一覧">
                     <div class="placeholder-text">スキャンして検出を開始...</div>
                 </div>
             </div>

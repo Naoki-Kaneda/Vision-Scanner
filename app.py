@@ -25,11 +25,19 @@ from rate_limiter import (
 # ─── 設定 ──────────────────────────────────────
 load_dotenv()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    force=True,  # 既存のハンドラを上書きして確実にログ出力
-)
+# Gunicorn環境ではGunicornのロガーを継承、開発環境では独自設定
+_is_gunicorn = "gunicorn" in os.environ.get("SERVER_SOFTWARE", "")
+if _is_gunicorn:
+    # Gunicornのログハンドラーを活用（フォーマットはGunicorn設定に委譲）
+    gunicorn_logger = logging.getLogger("gunicorn.error")
+    logging.root.handlers = gunicorn_logger.handlers
+    logging.root.setLevel(gunicorn_logger.level)
+else:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        force=True,  # 開発環境: 既存のハンドラを上書きして確実にログ出力
+    )
 logger = logging.getLogger(__name__)
 # werkzeug リクエストログを明示的に有効化
 logging.getLogger("werkzeug").setLevel(logging.INFO)
@@ -81,6 +89,29 @@ def _check_admin_secret(secret):
     return warnings
 
 for _warn in _check_admin_secret(ADMIN_SECRET):
+    logger.warning(_warn)
+
+
+def _validate_api_key_format(key):
+    """VISION_API_KEYの形式を簡易チェックし、警告メッセージのリストを返す。
+
+    Google Cloud APIキーは通常39文字の英数字+ハイフン+アンダースコアで構成される。
+    厳密なバリデーションではなく、明らかな設定ミス（空白混入、短すぎ等）の早期検出が目的。
+    """
+    warnings = []
+    if not key:
+        return warnings  # 未設定は別のチェックで検出済み
+    import re
+    if len(key) < 20:
+        warnings.append(f"VISION_API_KEY が短すぎます（{len(key)}文字）。正しいキーか確認してください")
+    if key != key.strip():
+        warnings.append("VISION_API_KEY に前後の空白が含まれています。環境変数を確認してください")
+    if not re.match(r'^[A-Za-z0-9_\-]+$', key):
+        warnings.append("VISION_API_KEY に不正な文字が含まれています。英数字・ハイフン・アンダースコアのみ有効です")
+    return warnings
+
+
+for _warn in _validate_api_key_format(API_KEY):
     logger.warning(_warn)
 
 # CORS: 許可するOrigin（カンマ区切り）。未設定 = 同一オリジンのみ（デフォルト安全）
@@ -333,15 +364,19 @@ def readyz():
     # REDIS_URL が設定されているのにインメモリにフォールバックしている場合は警告
     redis_fallback = bool(REDIS_URL) and rate_backend == "in_memory"
 
+    api_key_warnings = _validate_api_key_format(API_KEY)
+    api_key_valid = bool(API_KEY) and len(api_key_warnings) == 0
+
     checks = {
         "api_key_configured": bool(API_KEY),
+        "api_key_format_ok": api_key_valid,
         "rate_limiter_backend": rate_backend,
         "rate_limiter_ok": not redis_fallback,
         "trust_proxy": TRUST_PROXY,
         "trust_proxy_hops": TRUST_PROXY_HOPS,
     }
 
-    warnings_list = []
+    warnings_list = list(api_key_warnings)
     if redis_fallback:
         warnings_list.append(
             "REDIS_URL が設定されていますが、Redis接続に失敗しインメモリにフォールバックしています"
