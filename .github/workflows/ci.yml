@@ -46,6 +46,12 @@ jobs:
       - name: pip-audit 脆弱性チェック
         run: python -m pip_audit
 
+      - name: OSV-Scanner 間接依存の脆弱性チェック
+        uses: google/osv-scanner-action/osv-scanner-action@v2
+        with:
+          scan-args: |-
+            --lockfile=requirements-lock.txt
+
       - name: pytest テスト実行
         env:
           VISION_API_KEY: "test-dummy-key"

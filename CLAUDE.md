@@ -95,15 +95,19 @@ pip-audit
 
 ### セキュリティ構成
 
-- **CSP**: `script-src 'self'`、`style-src 'self' 'nonce-...'`（unsafe-inline排除）
+- **CSP**: `script-src 'self'`、`style-src 'self' 'nonce-...'`（unsafe-inline排除）。HTTPS環境では`upgrade-insecure-requests`を自動付与
+- **HSTS**: HTTPS環境下で`Strict-Transport-Security: max-age=31536000; includeSubDomains`を自動付与
 - **CORS**: デフォルト同一オリジンのみ。`ALLOWED_ORIGINS`で明示的に許可
 - **相関ID**: 全リクエストに`X-Request-Id`ヘッダー付与（ログと一致）
 - **MIME検証**: JPEG/PNGのmagic byte検証（Base64デコード後）
 - **レート制限**: Redis原子操作 or インメモリ二重構造（分間+日次）
+- **管理APIブルートフォース防御**: 5分間に5回認証失敗でIPブロック（429）。認証失敗はIPとともにログ記録
+- **Permissions-Policy**: `camera=(self), microphone=()`（最小権限の原則）
+- **Google Cloud APIキー制限（推奨運用）**: Google Cloud Consoleで「Cloud Vision APIのみ」に制限し、本番ドメインのHTTPリファラー制限を設定すること
 
 ### CI/CD
 
-- `.github/workflows/ci.yml`: pytest（Python 3.11/3.12/3.13） + ruff + bandit + pip-audit + detect-secrets
+- `.github/workflows/ci.yml`: pytest（Python 3.11/3.12/3.13） + ruff + bandit + pip-audit + osv-scanner + detect-secrets
 - `.github/workflows/secrets-scan.yml`: シークレットスキャン
 - `.github/dependabot.yml`: pip依存+GitHub Actions週次チェック
 - Renderへの自動デプロイ: mainブランチへのpushで自動反映

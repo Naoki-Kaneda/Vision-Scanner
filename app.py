@@ -9,6 +9,9 @@ import hashlib
 import logging
 import secrets
 import socket
+import time
+from collections import defaultdict
+from threading import Lock
 
 from flask import Flask, render_template, request, jsonify, g
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -90,6 +93,32 @@ ALLOWED_IMAGE_MAGIC = {
     b"\xff\xd8\xff": "image/jpeg",
     b"\x89PNG\r\n\x1a\n": "image/png",
 }
+
+
+# ─── 管理APIブルートフォース防御 ──────────────────
+ADMIN_MAX_FAILURES = 5         # ブロックまでの連続失敗回数
+ADMIN_BLOCK_WINDOW = 300       # 失敗追跡ウィンドウ（秒）= 5分
+_admin_failures = defaultdict(list)   # {ip: [timestamp, ...]}
+_admin_lock = Lock()
+
+
+def _record_admin_failure(client_ip):
+    """管理API認証失敗を記録する。"""
+    with _admin_lock:
+        now = time.time()
+        cutoff = now - ADMIN_BLOCK_WINDOW
+        # ウィンドウ外の古い記録を除去してから追加
+        _admin_failures[client_ip] = [t for t in _admin_failures[client_ip] if t > cutoff]
+        _admin_failures[client_ip].append(now)
+
+
+def _is_admin_blocked(client_ip):
+    """管理APIへのアクセスがブロックされているか判定する。"""
+    with _admin_lock:
+        now = time.time()
+        cutoff = now - ADMIN_BLOCK_WINDOW
+        _admin_failures[client_ip] = [t for t in _admin_failures[client_ip] if t > cutoff]
+        return len(_admin_failures[client_ip]) >= ADMIN_MAX_FAILURES
 
 
 # ─── アプリケーション初期化 ─────────────────────
@@ -189,7 +218,7 @@ def add_security_headers(response):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
     # CSP: nonce化により unsafe-inline を完全排除
-    response.headers["Content-Security-Policy"] = (
+    csp_directives = (
         "default-src 'self'; "
         "script-src 'self'; "
         f"style-src 'self' 'nonce-{nonce}' https://fonts.googleapis.com; "
@@ -198,6 +227,10 @@ def add_security_headers(response):
         "media-src 'self' blob: mediastream:; "
         "connect-src 'self'"
     )
+    # HTTPS環境ではHTTPリソースを自動的にHTTPSへアップグレード
+    if request.is_secure:
+        csp_directives += "; upgrade-insecure-requests"
+    response.headers["Content-Security-Policy"] = csp_directives
 
     # ブラウザ権限を最小化: カメラのみ許可し、不要な権限は明示的に拒否
     response.headers["Permissions-Policy"] = "camera=(self), microphone=()"
@@ -354,6 +387,9 @@ def get_proxy_config():
     status = get_proxy_status()
     auth_header = request.headers.get("X-Admin-Secret", "")
     if not ADMIN_SECRET or not secrets.compare_digest(auth_header, ADMIN_SECRET):
+        # 認証ヘッダーが送られてきたが不正 → 攻撃の兆候としてログ記録
+        if auth_header:
+            _log("warning", "admin_auth_failed", ip=request.remote_addr, method="GET", endpoint="/api/config/proxy")
         return jsonify({"enabled": status["enabled"]})
     return jsonify(status)
 
@@ -361,8 +397,17 @@ def get_proxy_config():
 @app.route("/api/config/proxy", methods=["POST"])
 def update_proxy_config():
     """プロキシ設定を更新する（認証必須）"""
+    client_ip = request.remote_addr or "unknown"
+
+    # 管理APIブルートフォース防御: 短時間の連続失敗をブロック
+    if _is_admin_blocked(client_ip):
+        _log("warning", "admin_blocked", ip=client_ip, reason="too_many_failures")
+        return _error_response(ERR_RATE_LIMITED, "認証失敗が多すぎます。しばらく経ってから再試行してください", 429)
+
     auth_header = request.headers.get("X-Admin-Secret", "")
     if not ADMIN_SECRET or not secrets.compare_digest(auth_header, ADMIN_SECRET):
+        _record_admin_failure(client_ip)
+        _log("warning", "admin_auth_failed", ip=client_ip, method="POST", endpoint="/api/config/proxy")
         return _error_response(ERR_UNAUTHORIZED, "管理APIへのアクセス権がありません", 403)
 
     if not request.is_json:

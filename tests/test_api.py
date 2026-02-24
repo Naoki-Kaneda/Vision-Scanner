@@ -6,6 +6,7 @@ Vision AI Scanner - APIエンドポイントのテスト。
 import base64
 from unittest.mock import patch
 from tests.helpers import create_valid_image_base64, create_valid_png_base64
+from app import _admin_failures
 
 
 # ─── 正常系テスト ──────────────────────────────────
@@ -897,3 +898,85 @@ class TestMethodNotAllowed:
         data = response.get_json()
         assert data["ok"] is False
         assert data["error_code"] == "METHOD_NOT_ALLOWED"
+
+
+# ─── 管理APIブルートフォース防御テスト ──────────────────
+class TestAdminBruteForceProtection:
+    """管理APIブルートフォース防御（_record_admin_failure / _is_admin_blocked）のテスト。"""
+
+    def setup_method(self):
+        """各テスト前に認証失敗カウンターをリセットする。"""
+        _admin_failures.clear()
+
+    @patch("app.ADMIN_SECRET", "correct-secret-xyz")
+    def test_認証失敗5回未満ではブロックされない(self, client):
+        """4回連続で認証失敗した後、正しいシークレットでリクエストが成功すること。"""
+        # 準備: 4回認証失敗させる（ブロック閾値=5 の手前）
+        for _ in range(4):
+            response = client.post(
+                "/api/config/proxy",
+                json={"enabled": False},
+                headers={"X-Admin-Secret": "wrong-secret"},
+            )
+            assert response.status_code == 403
+
+        # 実行: 5回目は正しいシークレットで試みる
+        response = client.post(
+            "/api/config/proxy",
+            json={"enabled": False},
+            headers={"X-Admin-Secret": "correct-secret-xyz"},
+        )
+
+        # 検証: ブロックされずに正常応答が返ること
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["ok"] is True
+
+    @patch("app.ADMIN_SECRET", "correct-secret-xyz")
+    def test_認証失敗5回でブロックされ429を返す(self, client):
+        """5回連続で認証失敗すると、以降のリクエストが429 RATE_LIMITED を返すこと。"""
+        # 準備: 5回認証失敗させてブロック状態にする
+        for _ in range(5):
+            response = client.post(
+                "/api/config/proxy",
+                json={"enabled": False},
+                headers={"X-Admin-Secret": "wrong-secret"},
+            )
+            assert response.status_code == 403
+
+        # 実行: ブロック後に誤ったシークレットで再試行
+        response = client.post(
+            "/api/config/proxy",
+            json={"enabled": False},
+            headers={"X-Admin-Secret": "wrong-secret"},
+        )
+
+        # 検証: 429 と RATE_LIMITED エラーコードが返ること
+        assert response.status_code == 429
+        data = response.get_json()
+        assert data["ok"] is False
+        assert data["error_code"] == "RATE_LIMITED"
+
+    @patch("app.ADMIN_SECRET", "correct-secret-xyz")
+    def test_ブロック中は正しい認証でも429を返す(self, client):
+        """5回失敗でブロック状態になった後、正しいシークレットを送っても429を返すこと。"""
+        # 準備: 5回認証失敗させてブロック状態にする
+        for _ in range(5):
+            client.post(
+                "/api/config/proxy",
+                json={"enabled": False},
+                headers={"X-Admin-Secret": "wrong-secret"},
+            )
+
+        # 実行: ブロック後に正しいシークレットで試みる
+        response = client.post(
+            "/api/config/proxy",
+            json={"enabled": False},
+            headers={"X-Admin-Secret": "correct-secret-xyz"},
+        )
+
+        # 検証: 正しい認証でもブロックが優先され429が返ること
+        assert response.status_code == 429
+        data = response.get_json()
+        assert data["ok"] is False
+        assert data["error_code"] == "RATE_LIMITED"
