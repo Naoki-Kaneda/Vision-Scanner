@@ -15,5 +15,9 @@ services:
         value: "true"
       - key: NO_PROXY_MODE
         value: "true"
+      - key: TRUST_PROXY
+        value: "true"  # Renderロードバランサー経由の正しいクライアントIP取得に必須
+      - key: TRUST_PROXY_HOPS
+        value: "1"     # Renderは1段のリバースプロキシ
       - key: PYTHON_VERSION
         value: "3.12.0"

@@ -135,6 +135,7 @@ pip-audit
 | `SSL_KEY_PATH` | No | SSL秘密鍵ファイルパス（未設定=HTTP） |
 | `TRUST_PROXY` | No | リバースプロキシ信頼（デフォルト`false`） |
 | `TRUST_PROXY_HOPS` | No | プロキシホップ数（デフォルト`1`、不正値は1にフォールバック） |
+| `FLASK_SECRET_KEY` | No | Flask署名付きセッション用秘密鍵（未設定時は警告ログ出力） |
 
 ## コーディング規約
 

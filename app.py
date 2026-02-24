@@ -95,6 +95,17 @@ ALLOWED_IMAGE_MAGIC = {
 # ─── アプリケーション初期化 ─────────────────────
 app = Flask(__name__)
 
+# Flask SECRET_KEY: 署名付きクッキー等の暗号化に使用（将来的な拡張に備える）
+_flask_secret_key = os.getenv("FLASK_SECRET_KEY")
+if _flask_secret_key:
+    app.config["SECRET_KEY"] = _flask_secret_key
+else:
+    logger.warning(
+        "FLASK_SECRET_KEY が未設定です。"
+        " 署名付きセッション等を使用する場合は環境変数に設定してください。"
+        " 生成例: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+    )
+
 # リクエストボディの最大サイズ（Base64画像の5MB + JSONオーバーヘッド）
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BODY
 
@@ -188,11 +199,16 @@ def add_security_headers(response):
         "connect-src 'self'"
     )
 
-    # カメラ・マイクのアクセスを同一オリジンに限定
-    response.headers["Permissions-Policy"] = "camera=(self), microphone=(self)"
+    # ブラウザ権限を最小化: カメラのみ許可し、不要な権限は明示的に拒否
+    response.headers["Permissions-Policy"] = "camera=(self), microphone=()"
 
     # HTML/JS/CSSのブラウザキャッシュを防止（開発中の更新反映を保証）
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+
+    # HSTS: HTTPS環境下ではブラウザにHTTPS通信を強制（SSL剥ぎ取り攻撃を防止）
+    # request.is_secure はリバースプロキシ経由(ProxyFix)でも正しく判定される
+    if request.is_secure:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
     # 相関IDをレスポンスヘッダーに付与（障害調査用）
     if req_id:
