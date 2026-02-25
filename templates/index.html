@@ -109,6 +109,13 @@
                     <div class="help-settings">
                         <div class="help-settings-title">設定</div>
                         <div class="help-setting-item">
+                            <label>スキャンモード</label>
+                            <p class="help-setting-desc">
+                                <strong>ワンショット (1x)</strong>: 1回撮影したら結果を表示して停止します。<br>
+                                <strong>連続よみ (∞)</strong>: 解析完了後も自動的にスキャンを継続し、次の安定フレームを検出して解析を繰り返します。
+                            </p>
+                        </div>
+                        <div class="help-setting-item">
                             <label for="duplicate-skip-count">重複スキップ回数</label>
                             <div class="help-setting-control">
                                 <input type="range" id="duplicate-skip-count" min="1" max="5" value="2" step="1">
@@ -126,6 +133,7 @@
                     <button id="btn-scan" class="primary-btn" aria-label="スキャンを開始する">
                         <span class="icon" aria-hidden="true">▶</span> スタート
                     </button>
+                    <button id="btn-scan-mode" class="tool-btn scan-mode-btn" title="連続よみに切替" aria-label="ワンショットと連続よみを切り替える">1x ワンショット</button>
                 </div>
 
                 <!-- キャプチャ用非表示キャンバス -->

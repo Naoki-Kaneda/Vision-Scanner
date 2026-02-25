@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     TARGET_BOX_TOP    = _readCssPercent('--target-box-top',    0.10);
     TARGET_BOX_HEIGHT = _readCssPercent('--target-box-height', 0.58);
 });
-const STABILITY_THRESHOLD = 30;      // 安定判定フレーム数（約1秒@30fps）
+const STABILITY_THRESHOLD = 20;      // 安定判定フレーム数（約0.67秒@30fps）
 const MOTION_THRESHOLD = 30;         // フレーム間差分の閾値（カメラノイズ耐性を確保）
 const MOTION_CANVAS_WIDTH = 64;      // モーション検出用キャンバス幅
 const MOTION_CANVAS_HEIGHT = 48;     // モーション検出用キャンバス高さ
@@ -26,14 +26,37 @@ const CAMERA_HEIGHT = 720;           // カメラ解像度（高さ）
 const JPEG_QUALITY = 0.95;           // キャプチャ画質
 const MIN_RESULT_LENGTH = 5;         // 結果フィルター: 最小文字数
 const LABEL_MAX_LENGTH = 25;         // バウンディングボックスのラベル最大文字数
-const RETRY_DELAY_MS = 5000;         // エラー後の再試行待機時間（ミリ秒）
-const CAPTURE_RESET_DELAY_MS = 10000;      // 撮影完了後のバーリセット遅延（ミリ秒）
-const LABEL_CAPTURE_RESET_DELAY_MS = 10000; // ラベルモード: 次のスキャンまでの待機（ミリ秒）
+const RETRY_BASE_DELAY_MS = 5000;    // リトライ初回待機時間（指数バックオフ基底）
+const RETRY_MAX_DELAY_MS = 60000;    // リトライ最大待機時間（60秒）
+const CAPTURE_RESET_DELAY_MS = 3000;       // 撮影完了後のバーリセット遅延（ミリ秒）
+const LABEL_CAPTURE_RESET_DELAY_MS = 3000; // ラベルモード: 次のスキャンまでの待機（ミリ秒）
+const CONTINUOUS_SCAN_INTERVAL_MS = 3000;  // 連続スキャンモードのインターバル（ミリ秒）
+const IMAGE_HASH_SIZE = 8;                 // 画像ハッシュ用キャンバスサイズ（8x8）
+const IMAGE_HASH_THRESHOLD = 0.95;         // 画像ハッシュ類似度閾値（95%以上で同一とみなす）
 // true にするとクライアント側でも日次上限を強制。既定は false（サーバー側429に委譲）
 const ENFORCE_CLIENT_DAILY_LIMIT = false;
 const FETCH_TIMEOUT_MS = 20000;      // fetch タイムアウト（バックエンド15秒＋余裕5秒）
 const MAX_UPLOAD_SIZE = 5 * 1024 * 1024;  // アップロード上限（5MB、サーバー側と一致）
 let DUPLICATE_SKIP_COUNT = 2;        // 同じ結果がN回連続したらカメラ移動まで一時停止（UI設定で変更可）
+
+// ─── スキャン状態機械 ──────────────────────────────
+const ScanState = Object.freeze({
+    IDLE:              'IDLE',              // 待機中
+    SCANNING:          'SCANNING',          // フレーム監視中
+    ANALYZING:         'ANALYZING',         // API送信中
+    PAUSED_ERROR:      'PAUSED_ERROR',      // エラー一時停止
+    PAUSED_DUPLICATE:  'PAUSED_DUPLICATE',  // 重複検出で一時停止
+    COOLDOWN:          'COOLDOWN',          // レート制限待機
+});
+
+const SCAN_TRANSITIONS = Object.freeze({
+    IDLE:              ['SCANNING'],
+    SCANNING:          ['IDLE', 'ANALYZING', 'PAUSED_DUPLICATE'],
+    ANALYZING:         ['IDLE', 'SCANNING', 'PAUSED_ERROR', 'PAUSED_DUPLICATE', 'COOLDOWN'],
+    PAUSED_ERROR:      ['IDLE', 'SCANNING'],
+    PAUSED_DUPLICATE:  ['IDLE', 'SCANNING'],
+    COOLDOWN:          ['IDLE', 'SCANNING'],
+});
 
 // モードごとのバウンディングボックス色設定
 const MODE_BOX_CONFIG = {
@@ -83,27 +106,254 @@ let btnCamera, btnFile, btnFlipCam;
 let modeText, modeObject, modeLabel, modeFace, modeLogo, modeClassify, modeWeb;
 
 // ─── アプリケーション状態 ──────────────────────────
-let isScanning = false;
+let scanState = ScanState.IDLE;      // スキャン状態機械（旧: isScanning等のフラグ群）
 let currentSource = 'camera';
 let currentMode = 'text';
 let isMirrored = false;
-let isPausedByError = false;  // エラーによる一時停止状態
-let retryTimerId = null;      // 再試行用タイマーID
-let isAnalyzing = false;      // API呼び出し中フラグ（並行呼び出し防止）
+let isSingleShot = true;             // ワンショット/連続よみ（デフォルト: ワンショット）
+let retryTimerId = null;             // 再試行用タイマーID
+let consecutiveErrorCount = 0;       // 連続エラー回数（指数バックオフ用）
+let continuousDelayTimerId = null;   // 連続スキャンインターバルタイマー
+let cooldownTimerId = null;          // クールダウンカウントダウンタイマー
+let cooldownRemaining = 0;           // クールダウン残り秒数
+let shouldRestartAfterCooldown = false; // クールダウン後の自動開始フラグ
+let lastSentImageHash = null;        // 前回送信画像のグレースケールハッシュ
 let lastResultFingerprint = null;    // 直前のAPI結果の指紋（重複検出用）
 let duplicateCount = 0;              // 同じ結果の連続回数
-let isDuplicatePaused = false;       // 重複検出による一時停止状態
 let apiCallCount = 0;
 let videoDevices = [];
 let currentFacingMode = 'environment';  // 'environment'=外カメ, 'user'=インカメ
 let lastFrameData = null;
 let stabilityCounter = 0;
+let scanRafId = null;                // cancelAnimationFrame用ID
 
 // 差分検出用キャンバス（毎フレーム生成せず再利用）
 const motionCanvas = document.createElement('canvas');
 motionCanvas.width = MOTION_CANVAS_WIDTH;
 motionCanvas.height = MOTION_CANVAS_HEIGHT;
 const motionCtx = motionCanvas.getContext('2d', { willReadFrequently: true });
+
+// 画像ハッシュ計算用キャンバス（8x8グレースケール比較用）
+const hashCanvas = document.createElement('canvas');
+hashCanvas.width = IMAGE_HASH_SIZE;
+hashCanvas.height = IMAGE_HASH_SIZE;
+const hashCtx = hashCanvas.getContext('2d', { willReadFrequently: true });
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 画像ハッシュ（送信前重複防止）
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/**
+ * Canvas上の画像から8x8グレースケールハッシュを生成する。
+ * ITU-R BT.601 輝度変換（0.299R + 0.587G + 0.114B）を適用。
+ * @param {HTMLCanvasElement} srcCanvas - 描画済みのキャプチャキャンバス
+ * @returns {Uint8Array} 64要素のグレースケール値配列
+ */
+function computeImageHash(srcCanvas) {
+    hashCtx.drawImage(srcCanvas, 0, 0, IMAGE_HASH_SIZE, IMAGE_HASH_SIZE);
+    const pixels = hashCtx.getImageData(0, 0, IMAGE_HASH_SIZE, IMAGE_HASH_SIZE).data;
+    const gray = new Uint8Array(IMAGE_HASH_SIZE * IMAGE_HASH_SIZE);
+    for (let i = 0; i < gray.length; i++) {
+        gray[i] = Math.round(
+            pixels[i * 4]     * 0.299 +
+            pixels[i * 4 + 1] * 0.587 +
+            pixels[i * 4 + 2] * 0.114
+        );
+    }
+    return gray;
+}
+
+/**
+ * 2つの画像ハッシュの類似度を計算する（0.0〜1.0）。
+ * @param {Uint8Array} hashA
+ * @param {Uint8Array} hashB
+ * @returns {number} 類似度（1.0=完全一致）
+ */
+function compareImageHash(hashA, hashB) {
+    if (!hashA || !hashB || hashA.length !== hashB.length) return 0;
+    let totalDiff = 0;
+    for (let i = 0; i < hashA.length; i++) {
+        totalDiff += Math.abs(hashA[i] - hashB[i]);
+    }
+    return 1 - totalDiff / (hashA.length * 255);
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 状態遷移・UI同期
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/**
+ * スキャン状態を遷移させる。不正な遷移は警告を出して拒否する。
+ * @param {string} newState - 遷移先のScanState値
+ * @returns {boolean} 遷移成功ならtrue
+ */
+function transitionTo(newState) {
+    if (scanState === newState) return true;
+    const allowed = SCAN_TRANSITIONS[scanState];
+    if (!allowed || !allowed.includes(newState)) {
+        console.warn(`不正な状態遷移: ${scanState} → ${newState}`);
+        return false;
+    }
+    scanState = newState;
+    syncUI(newState);
+    return true;
+}
+
+/** 安定化バーをリセット（幅0%、全状態クラス除去） */
+function _resetStabilityBar() {
+    if (!stabilityBarFill) return;
+    stabilityBarFill.style.width = '0%';
+    stabilityBarFill.classList.remove('captured', 'cooldown', 'interval-wait', 'paused-duplicate');
+}
+
+/** 安定化バーを特定の状態で表示する */
+function _setStabilityBarState(state) {
+    if (!stabilityBarFill) return;
+    stabilityBarFill.style.width = '100%';
+    stabilityBarFill.classList.remove('captured', 'cooldown', 'interval-wait', 'paused-duplicate');
+    stabilityBarFill.classList.add(state);
+}
+
+/**
+ * スキャン状態に応じてUIを一括同期する。
+ * @param {string} state - ScanState列挙値
+ */
+function syncUI(state) {
+    // COOLDOWNで付加されたスタイルをリセット
+    if (btnScan) {
+        btnScan.style.opacity = '';
+        btnScan.style.cursor = '';
+    }
+    switch (state) {
+        case ScanState.IDLE:
+            _setBtnScanContent('▶', 'スタート');
+            if (btnScan) { btnScan.disabled = false; btnScan.classList.remove('scanning'); }
+            if (videoContainer) videoContainer.classList.remove('scanning');
+            if (statusDot) statusDot.classList.remove('active');
+            if (stabilityBarContainer) stabilityBarContainer.classList.add('hidden');
+            _resetStabilityBar();
+            break;
+        case ScanState.SCANNING:
+            _setBtnScanContent('■', 'ストップ');
+            if (btnScan) { btnScan.disabled = false; btnScan.classList.add('scanning'); }
+            if (videoContainer) videoContainer.classList.add('scanning');
+            if (statusDot) statusDot.classList.add('active');
+            break;
+        case ScanState.ANALYZING:
+            _setBtnScanContent('⏳', '解析中');
+            if (btnScan) { btnScan.disabled = true; btnScan.classList.remove('scanning'); }
+            if (videoContainer) videoContainer.classList.remove('scanning');
+            if (statusDot) statusDot.classList.remove('active');
+            if (stabilityBarContainer) stabilityBarContainer.classList.add('hidden');
+            break;
+        case ScanState.PAUSED_ERROR:
+            _setBtnScanContent('■', 'ストップ');
+            if (btnScan) { btnScan.disabled = false; btnScan.classList.add('scanning'); }
+            if (videoContainer) videoContainer.classList.add('scanning');
+            if (statusDot) statusDot.classList.add('active');
+            break;
+        case ScanState.PAUSED_DUPLICATE:
+            _setBtnScanContent('■', 'ストップ');
+            if (btnScan) { btnScan.disabled = false; btnScan.classList.add('scanning'); }
+            if (videoContainer) videoContainer.classList.add('scanning');
+            if (statusDot) statusDot.classList.add('active');
+            if (stabilityBarContainer) stabilityBarContainer.classList.remove('hidden');
+            _setStabilityBarState('paused-duplicate');
+            break;
+        case ScanState.COOLDOWN:
+            _setBtnScanContent('⏳', '待機中');
+            if (btnScan) {
+                btnScan.disabled = true;
+                btnScan.style.opacity = '0.5';
+                btnScan.style.cursor = 'not-allowed';
+                btnScan.classList.remove('scanning');
+            }
+            if (videoContainer) videoContainer.classList.remove('scanning');
+            if (statusDot) statusDot.classList.remove('active');
+            if (stabilityBarContainer) stabilityBarContainer.classList.remove('hidden');
+            _setStabilityBarState('cooldown');
+            break;
+    }
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// COOLDOWN カウントダウン
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/** レート制限のクールダウンカウントダウンを開始する。 */
+function startCooldownCountdown(seconds) {
+    stopCooldownCountdown();
+    const totalSeconds = seconds;
+    cooldownRemaining = seconds;
+
+    cooldownTimerId = setInterval(() => {
+        cooldownRemaining--;
+        if (cooldownRemaining <= 0) {
+            stopCooldownCountdown();
+        } else {
+            const progress = (cooldownRemaining / totalSeconds) * 100;
+            if (stabilityBarFill) stabilityBarFill.style.width = progress + '%';
+            if (statusText) statusText.textContent = `⏳ リクエスト制限中... あと${cooldownRemaining}秒`;
+        }
+    }, 1000);
+}
+
+/** クールダウンカウントダウンを停止し、必要なら自動再開する。 */
+function stopCooldownCountdown() {
+    const wasActive = cooldownTimerId !== null;
+    if (cooldownTimerId) { clearInterval(cooldownTimerId); cooldownTimerId = null; }
+    cooldownRemaining = 0;
+
+    if (wasActive && scanState === ScanState.COOLDOWN) {
+        scanState = ScanState.IDLE;
+        syncUI(ScanState.IDLE);
+        if (statusText) statusText.textContent = '準備完了 ― スタートで再スキャン';
+    }
+
+    if (shouldRestartAfterCooldown) {
+        shouldRestartAfterCooldown = false;
+        startScanning();
+    }
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// スキャンモード切替（ワンショット/連続よみ）
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/** ワンショット/連続よみモードを切り替える。 */
+function toggleScanMode() {
+    isSingleShot = !isSingleShot;
+    localStorage.setItem('isSingleShot', isSingleShot ? '1' : '0');
+    updateScanModeButton();
+}
+
+/** localStorageからスキャンモードを復元する。 */
+function restoreScanMode() {
+    const saved = localStorage.getItem('isSingleShot');
+    if (saved !== null) {
+        isSingleShot = saved !== '0';
+    }
+    updateScanModeButton();
+}
+
+/** スキャンモードボタンの表示を更新する。 */
+function updateScanModeButton() {
+    const btn = document.getElementById('btn-scan-mode');
+    if (!btn) return;
+    if (isSingleShot) {
+        btn.textContent = '1x ワンショット';
+        btn.title = '連続よみに切替';
+        btn.classList.remove('continuous-active');
+    } else {
+        btn.textContent = '∞ 連続よみ';
+        btn.title = 'ワンショットに切替';
+        btn.classList.add('continuous-active');
+    }
+}
 
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -476,92 +726,89 @@ function updateSourceButtons() {
 // スキャン・安定化検出
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/** 重複検出状態をリセットする。 */
-function resetDuplicateState() {
-    isDuplicatePaused = false;
-    duplicateCount = 0;
-    lastResultFingerprint = null;
-}
-
 /** スキャンの開始/停止を切り替える（チャタリング防止: タイムスタンプガード）。 */
 let lastToggleTime = 0;
 function toggleScanning() {
     const now = Date.now();
-    if (now - lastToggleTime < 800) return;
+    if (now - lastToggleTime < 300) return;
     lastToggleTime = now;
-    // isScanning または isPausedByError（エラー再試行待ち）なら停止
-    (isScanning || isPausedByError) ? stopScanning() : startScanning();
+
+    if (scanState === ScanState.ANALYZING) return;
+
+    // クールダウン中: 終了後に自動開始するフラグを立てる
+    if (scanState === ScanState.COOLDOWN) {
+        shouldRestartAfterCooldown = true;
+        if (statusText) statusText.textContent = 'クールダウン終了後にスキャンを開始します';
+        return;
+    }
+
+    if (scanState !== ScanState.IDLE) {
+        stopScanning();
+    } else {
+        startScanning();
+    }
 }
 
 /** スキャンを開始し、安定化検出ループを起動する。 */
 function startScanning() {
-    // エラー再試行タイマーが残っていればクリア（2重ループ防止）
-    isPausedByError = false;
-    if (retryTimerId) {
-        clearTimeout(retryTimerId);
-        retryTimerId = null;
-    }
+    if (!transitionTo(ScanState.SCANNING)) return;
 
-    isScanning = true;
-    // XSS対策: DOM操作でボタン内容を更新（innerHTML不使用）
-    _setBtnScanContent('■', 'ストップ');
-    btnScan.classList.add('scanning');
-    if (videoContainer) videoContainer.classList.add('scanning');
-    if (statusDot) statusDot.classList.add('active');
-    if (statusText) statusText.textContent = 'スキャン中';
-
-    // 安定化状態をリセット（前回停止時のフレームデータが残ると復帰直後に誤判定する）
+    consecutiveErrorCount = 0;
+    lastSentImageHash = null;
     lastFrameData = null;
     stabilityCounter = 0;
-    // 重複検出状態もリセット
-    isDuplicatePaused = false;
-    duplicateCount = 0;
-    lastResultFingerprint = null;
-
-    // 安定化バーを表示
-    if (stabilityBarContainer) stabilityBarContainer.classList.remove('hidden');
-    if (stabilityBarFill) stabilityBarFill.style.width = '0%';
-
-    scanFrameCount = 0;
-    requestAnimationFrame(scanLoop);
-}
-
-/** スキャンを停止してUIをリセットする。 */
-function stopScanning() {
-    isScanning = false;
-    isPausedByError = false;
-    if (retryTimerId) {
-        clearTimeout(retryTimerId);
-        retryTimerId = null;
-    }
-    clearOverlay();
-    // XSS対策: DOM操作でボタン内容を更新（innerHTML不使用）
-    _setBtnScanContent('▶', 'スタート');
-    btnScan.classList.remove('scanning');
-    if (videoContainer) videoContainer.classList.remove('scanning');
-    if (statusDot) statusDot.classList.remove('active');
-    if (statusText) statusText.textContent = '準備完了';
-
-    // 安定化状態をリセット
-    lastFrameData = null;
-    stabilityCounter = 0;
-    // 重複検出状態もリセット
-    isDuplicatePaused = false;
     duplicateCount = 0;
     lastResultFingerprint = null;
     updateDupSkipBadge();
 
-    // 安定化バーを非表示
-    if (stabilityBarContainer) stabilityBarContainer.classList.add('hidden');
+    if (statusText) statusText.textContent = 'スキャン中';
+    if (stabilityBarContainer) stabilityBarContainer.classList.remove('hidden');
+    _resetStabilityBar();
+
+    scanFrameCount = 0;
+    if (scanRafId) cancelAnimationFrame(scanRafId);
+    scanRafId = requestAnimationFrame(scanLoop);
+}
+
+/** スキャンを停止してUIをリセットする。 */
+function stopScanning() {
+    // 全タイマーをクリア
+    if (scanRafId) { cancelAnimationFrame(scanRafId); scanRafId = null; }
+    if (retryTimerId) { clearTimeout(retryTimerId); retryTimerId = null; }
+    if (continuousDelayTimerId) { clearTimeout(continuousDelayTimerId); continuousDelayTimerId = null; }
+    shouldRestartAfterCooldown = false;
+    stopCooldownCountdown();
+
+    // 状態を直接IDLEにセット（どの状態からでも強制停止可能にする）
+    scanState = ScanState.IDLE;
+    syncUI(ScanState.IDLE);
+
+    clearOverlay();
+    if (statusText) statusText.textContent = '準備完了';
+
+    lastFrameData = null;
+    stabilityCounter = 0;
+    duplicateCount = 0;
+    lastResultFingerprint = null;
+    updateDupSkipBadge();
 }
 
 /** requestAnimationFrameベースのスキャンループ。 */
 let scanFrameCount = 0;
 function scanLoop() {
-    if (!isScanning) return;
+    // SCANNINGまたはPAUSED_DUPLICATE以外なら終了
+    if (scanState !== ScanState.SCANNING && scanState !== ScanState.PAUSED_DUPLICATE) return;
+
     scanFrameCount++;
+
+    // PAUSED_DUPLICATE: 15フレームに1回のみチェック（約2fps@30fps、CPU負荷軽減）
+    if (scanState === ScanState.PAUSED_DUPLICATE && scanFrameCount % 15 !== 0) {
+        scanRafId = requestAnimationFrame(scanLoop);
+        return;
+    }
+
     checkStabilityAndCapture();
-    requestAnimationFrame(scanLoop);
+    scanRafId = requestAnimationFrame(scanLoop);
 }
 
 /** フレーム間の平均ピクセル差分を計算する。初回フレームは 0 を返す。 */
@@ -574,23 +821,6 @@ function _calcFrameDiff(currentFrameData) {
         diff += Math.abs(currentFrameData[i + 2] - lastFrameData[i + 2]);
     }
     return diff / (motionCanvas.width * motionCanvas.height);
-}
-
-/** カメラ動作を検出した際の重複状態リセット処理。 */
-function _handleMotionDetected() {
-    stabilityCounter = 0;
-    if (isDuplicatePaused || duplicateCount > 0) {
-        isDuplicatePaused = false;
-        duplicateCount = 0;
-        lastResultFingerprint = null;
-        if (statusText) statusText.textContent = 'スキャン中';
-        updateDupSkipBadge();
-    }
-    if (stabilityBarFill) {
-        stabilityBarFill.style.width = '0%';
-        stabilityBarFill.classList.remove('captured');
-    }
-    lastStabilityState = 'moving';
 }
 
 /**
@@ -614,15 +844,14 @@ function checkStabilityAndCapture() {
             const progress = Math.min((stabilityCounter / STABILITY_THRESHOLD) * 100, 100);
             if (stabilityBarFill) {
                 stabilityBarFill.style.width = progress + '%';
-                stabilityBarFill.classList.remove('captured');
+                stabilityBarFill.classList.remove('captured', 'cooldown', 'interval-wait', 'paused-duplicate');
             }
-            // テキストは変更しない（プログレスバーのみで進捗を表示）
             lastStabilityState = 'stabilizing';
 
             if (stabilityCounter >= STABILITY_THRESHOLD) {
                 // 重複一時停止中はキャプチャをスキップ（バーは100%で待機）
-                if (isDuplicatePaused) {
-                    stabilityCounter = STABILITY_THRESHOLD; // カウンターを維持
+                if (scanState === ScanState.PAUSED_DUPLICATE) {
+                    stabilityCounter = STABILITY_THRESHOLD;
                     return;
                 }
                 // 安定完了 → キャプチャ実行
@@ -636,25 +865,32 @@ function checkStabilityAndCapture() {
                 stabilityCounter = 0;
 
                 // モードに応じた遅延後にバーをリセット
-                // ラベルモード: 結果確認＋品物入替の時間を確保（5秒）
                 const resetDelay = ['label', 'web'].includes(currentMode)
                     ? LABEL_CAPTURE_RESET_DELAY_MS
                     : CAPTURE_RESET_DELAY_MS;
                 const capturedMode = currentMode;
                 setTimeout(() => {
-                    // モード変更された場合はリセットをスキップ（新モードの状態を壊さない）
-                    if (isScanning && currentMode === capturedMode) {
+                    if (scanState === ScanState.SCANNING && currentMode === capturedMode) {
                         lastStabilityState = 'idle';
-                        if (stabilityBarFill) {
-                            stabilityBarFill.style.width = '0%';
-                            stabilityBarFill.classList.remove('captured');
-                        }
+                        _resetStabilityBar();
                         if (statusText) statusText.textContent = 'スキャン中';
                     }
                 }, resetDelay);
             }
         } else {
-            _handleMotionDetected();
+            // 動き検出 → 安定化リセット
+            stabilityCounter = 0;
+            if (scanState === ScanState.PAUSED_DUPLICATE || duplicateCount > 0) {
+                if (scanState === ScanState.PAUSED_DUPLICATE) {
+                    transitionTo(ScanState.SCANNING);
+                }
+                duplicateCount = 0;
+                lastResultFingerprint = null;
+                if (statusText) statusText.textContent = 'スキャン中';
+                updateDupSkipBadge();
+            }
+            _resetStabilityBar();
+            lastStabilityState = 'moving';
         }
     }
 
@@ -766,13 +1002,20 @@ function drawBoundingBoxes(data, imageSize) {
 
 /** ターゲットボックス内の映像をキャプチャしてAPIに送信する。 */
 async function captureAndAnalyze() {
-    if (!video.videoWidth || isAnalyzing || isApiLimitReached()) return;
-    isAnalyzing = true;
+    if (!video.videoWidth || scanState === ScanState.ANALYZING || isApiLimitReached()) return;
+
+    // スキャン中からの遷移かどうかを記録（finally分岐に使用）
+    const wasStreamingScan = (scanState === ScanState.SCANNING);
+
+    if (!transitionTo(ScanState.ANALYZING)) return;
     clearOverlay();
 
+    // スキャンループを明示停止（二重実行防止）
+    if (scanRafId) { cancelAnimationFrame(scanRafId); scanRafId = null; }
+
     // ターゲットボックス内のみをクロップして送信（CSSの.target-boxと同期）
-    const srcX = video.videoWidth * (1 - TARGET_BOX_RATIO) / 2;  // 横: 中央寄せ
-    const srcY = video.videoHeight * TARGET_BOX_TOP;               // 縦: 上端10%
+    const srcX = video.videoWidth * (1 - TARGET_BOX_RATIO) / 2;
+    const srcY = video.videoHeight * TARGET_BOX_TOP;
     const srcW = video.videoWidth * TARGET_BOX_RATIO;
     const srcH = video.videoHeight * TARGET_BOX_HEIGHT;
 
@@ -780,7 +1023,33 @@ async function captureAndAnalyze() {
     canvas.height = srcH;
     ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
 
+    // 画像ハッシュ比較: 前回と95%以上一致ならAPI送信をスキップ
+    const currentHash = computeImageHash(canvas);
+    if (lastSentImageHash) {
+        const similarity = compareImageHash(currentHash, lastSentImageHash);
+        if (similarity >= IMAGE_HASH_THRESHOLD) {
+            console.log(`画像ハッシュ一致 (${(similarity * 100).toFixed(1)}%) — スキップ`);
+            if (statusText) statusText.textContent = '前回と同じ画像のためスキップ';
+            // 連続よみモード: 停止せず次のスキャンへ
+            if (!isSingleShot && wasStreamingScan) {
+                transitionTo(ScanState.SCANNING);
+                stabilityCounter = 0;
+                lastFrameData = null;
+                _resetStabilityBar();
+                if (stabilityBarContainer) stabilityBarContainer.classList.remove('hidden');
+                scanRafId = requestAnimationFrame(scanLoop);
+                return;
+            }
+            transitionTo(ScanState.IDLE);
+            if (statusText) statusText.textContent = '完了 ― スタートで再スキャン';
+            return;
+        }
+    }
+
     const imageData = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+
+    let succeeded = false;
+    let _pendingDuplicatePause = false;
 
     try {
         const response = await fetch('/api/analyze', {
@@ -795,33 +1064,44 @@ async function captureAndAnalyze() {
         try {
             result = await response.json();
         } catch {
-            statusText.textContent = `⚠ サーバーエラー (${response.status})`;
-            scheduleRetry();
+            if (statusText) statusText.textContent = `⚠ サーバーエラー (${response.status})`;
             return;
         }
 
-        // サーバー側レート制限: 再試行スケジュールで連射を防止
+        // サーバー側レート制限 → COOLDOWN状態
         if (response.status === 429) {
-            statusText.textContent = `⚠ ${result.message || 'リクエスト制限中'}`;
-            scheduleRetry();
+            // 日次上限の場合はスキャンを完全停止
+            if (result.limit_type === 'daily') {
+                if (statusText) statusText.textContent = `⚠ ${result.message || '本日のAPI上限に達しました'}`;
+                disableScanButton('本日の上限に到達');
+                return;
+            }
+            const retryAfter = parseInt(
+                result.retry_after || response.headers.get('Retry-After') || '10', 10
+            );
+            if (statusText) statusText.textContent = `⚠ ${result.message || 'リクエスト制限中'}`;
+            transitionTo(ScanState.COOLDOWN);
+            startCooldownCountdown(retryAfter);
             return;
         }
 
         // 成功時のみカウント加算（失敗時はAPI消費しない）
         if (result.ok) {
+            succeeded = true;
+            consecutiveErrorCount = 0;
+            lastSentImageHash = currentHash;
             apiCallCount++;
             saveApiUsage();
 
-            // 重複検出: 同じ結果が連続したらカメラ移動まで一時停止
+            // 改善された重複検出
             const fingerprint = computeResultFingerprint(result);
             if (fingerprint && fingerprint === lastResultFingerprint) {
                 duplicateCount++;
                 if (duplicateCount >= DUPLICATE_SKIP_COUNT) {
-                    isDuplicatePaused = true;
+                    _pendingDuplicatePause = true;
                     if (statusText) statusText.textContent = '同じ内容を検出済み ― カメラを動かしてください';
                 }
             } else {
-                // 新しい結果 → カウントリセット（初回を1としてカウント）
                 duplicateCount = fingerprint ? 1 : 0;
             }
             if (fingerprint) lastResultFingerprint = fingerprint;
@@ -861,43 +1141,93 @@ async function captureAndAnalyze() {
                 .filter(isValidResult)
                 .forEach(addResultItem);
         } else if (!result.ok) {
-            // UIにエラーを表示し、一定時間スキャンを一時停止
             const errorMsg = result.message || `サーバーエラー (${result.error_code})`;
-            statusText.textContent = `⚠ ${errorMsg}`;
+            if (statusText) statusText.textContent = `⚠ ${errorMsg}`;
             console.error(`APIエラー [${result.error_code}]:`, result.message);
-            scheduleRetry();
         }
     } catch (err) {
-        // 通信失敗もUIに表示
-        statusText.textContent = '⚠ 通信エラー。再試行します...';
+        // 通信失敗
+        if (err.name === 'AbortError') {
+            if (statusText) statusText.textContent = '⚠ タイムアウト';
+        } else {
+            if (statusText) statusText.textContent = '⚠ 通信エラー';
+        }
         console.error('通信エラー:', err);
-        scheduleRetry();
+
+        // カメラスキャン中のエラー: 自動復帰を予約
+        if (wasStreamingScan) {
+            _pendingDuplicatePause = false;
+            transitionTo(ScanState.PAUSED_ERROR);
+            scheduleRetry();
+        }
     } finally {
-        isAnalyzing = false;
+        // ANALYZING状態のままの場合のみ後続処理を実行
+        if (scanState === ScanState.ANALYZING) {
+            if (_pendingDuplicatePause && wasStreamingScan) {
+                // 【分岐1】重複停止
+                transitionTo(ScanState.SCANNING);
+                transitionTo(ScanState.PAUSED_DUPLICATE);
+                scanRafId = requestAnimationFrame(scanLoop);
+
+            } else if (!isSingleShot && wasStreamingScan) {
+                // 【分岐2】連続よみモード: インターバル後に再スキャン
+                transitionTo(ScanState.SCANNING);
+                if (stabilityBarContainer) stabilityBarContainer.classList.remove('hidden');
+                _setStabilityBarState('interval-wait');
+                if (statusText) statusText.textContent = '完了 ― 次のスキャンまで待機中...';
+
+                continuousDelayTimerId = setTimeout(() => {
+                    continuousDelayTimerId = null;
+                    if (scanState !== ScanState.SCANNING) return;
+                    _resetStabilityBar();
+                    stabilityCounter = 0;
+                    lastStabilityState = 'idle';
+                    if (statusText) statusText.textContent = 'スキャン中';
+                    scanRafId = requestAnimationFrame(scanLoop);
+                }, CONTINUOUS_SCAN_INTERVAL_MS);
+
+            } else {
+                // 【分岐3】ワンショットモード: 停止
+                transitionTo(ScanState.IDLE);
+            }
+        }
+
+        // ワンショット成功完了時のメッセージ
+        if (succeeded && scanState === ScanState.IDLE) {
+            if (statusText) statusText.textContent = '完了 ― スタートで再スキャン';
+        }
     }
 }
 
 /**
- * エラー発生時の再試行スケジュール
+ * エラー発生時の再試行スケジュール（指数バックオフ + ジッター）。
+ * 連続エラー時: 5秒 → 10秒 → 20秒 → 40秒 → 60秒（上限）
  */
 function scheduleRetry() {
-    if (!isScanning && !isPausedByError) return; // 手動停止済みななら何もしない
-
-    isScanning = false;
-    isPausedByError = true;
+    if (scanState !== ScanState.PAUSED_ERROR) return;
 
     if (retryTimerId) clearTimeout(retryTimerId);
 
+    consecutiveErrorCount++;
+    // 指数バックオフ + ジッター: BASE × 2^(n-1) × [0.75, 1.25]
+    const jitter = 0.75 + Math.random() * 0.5;
+    const delay = Math.min(
+        RETRY_BASE_DELAY_MS * Math.pow(2, consecutiveErrorCount - 1) * jitter,
+        RETRY_MAX_DELAY_MS
+    );
+    const delaySec = Math.ceil(delay / 1000);
+
+    if (statusText) statusText.textContent = `⚠ エラー ― ${delaySec}秒後に再試行`;
+
     retryTimerId = setTimeout(() => {
         retryTimerId = null;
-        // まだエラー停止状態かつ手動停止されていなければ再開
-        if (isPausedByError) {
-            isScanning = true;
-            isPausedByError = false;
+        if (scanState === ScanState.PAUSED_ERROR) {
+            transitionTo(ScanState.SCANNING);
             if (statusText) statusText.textContent = 'スキャン中';
-            requestAnimationFrame(scanLoop);
+            if (scanRafId) cancelAnimationFrame(scanRafId);
+            scanRafId = requestAnimationFrame(scanLoop);
         }
-    }, RETRY_DELAY_MS);
+    }, delay);
 }
 
 
@@ -928,10 +1258,17 @@ function computeResultFingerprint(result) {
     // 共通: data 配列からラベルを抽出してソート結合
     if (!result.data || result.data.length === 0) return null;
     const labels = result.data
-        .map(item => (item.label || '').trim())
+        .map(item => {
+            let label = (item.label || '').trim();
+            // 確信度部分を除去（"Apple - 95%" → "Apple"）
+            label = label.replace(/\s*[-–]\s*\d+%\s*$/, '');
+            return label.toLowerCase();
+        })
         .filter(l => l.length > 0)
         .sort();
-    return labels.length > 0 ? labels.join('|') : null;
+    if (labels.length === 0) return null;
+    // 検出数プレフィックス + ラベル一覧で指紋を構成
+    return `n${labels.length}:${labels.join('|')}`;
 }
 
 /**
@@ -941,7 +1278,9 @@ function computeResultFingerprint(result) {
 function updateDupSkipBadge() {
     if (!dupSkipBadge) return;
 
-    if (!isScanning || duplicateCount === 0) {
+    const isActive = scanState === ScanState.SCANNING || scanState === ScanState.PAUSED_DUPLICATE;
+
+    if (!isActive || duplicateCount === 0) {
         // スキャン停止中 or 初回 → 非表示
         dupSkipBadge.classList.add('hidden');
         dupSkipBadge.classList.remove('counting', 'paused');
@@ -950,7 +1289,7 @@ function updateDupSkipBadge() {
 
     dupSkipBadge.classList.remove('hidden');
 
-    if (isDuplicatePaused) {
+    if (scanState === ScanState.PAUSED_DUPLICATE) {
         // 一時停止中 → 赤系パルス
         dupSkipBadge.classList.remove('counting');
         dupSkipBadge.classList.add('paused');
@@ -1263,7 +1602,9 @@ function toggleMirror() {
 function setMode(mode) {
     currentMode = mode;
     // モード変更時に重複検出状態をリセット（新モードでは別の結果が返る）
-    isDuplicatePaused = false;
+    if (scanState === ScanState.PAUSED_DUPLICATE) {
+        transitionTo(ScanState.SCANNING);
+    }
     duplicateCount = 0;
     lastResultFingerprint = null;
     const allModes = {
@@ -1355,6 +1696,10 @@ function init() {
     btnScan.addEventListener('click', toggleScanning);
     if (btnClear) btnClear.addEventListener('click', clearResults);
 
+    // スキャンモード切替ボタン
+    const btnScanMode = document.getElementById('btn-scan-mode');
+    if (btnScanMode) btnScanMode.addEventListener('click', toggleScanMode);
+
     // ヘルプポップアップの開閉
     const btnHelp = document.getElementById('btn-help');
     const helpPopup = document.getElementById('help-popup');
@@ -1399,8 +1744,12 @@ function init() {
             if (dupValue) dupValue.textContent = val + '回';
             localStorage.setItem('duplicateSkipCount', val);
             // 変更時に重複状態をリセット（新しい閾値を即座に反映）
-            isDuplicatePaused = false;
+            if (scanState === ScanState.PAUSED_DUPLICATE) {
+                transitionTo(ScanState.SCANNING);
+            }
             duplicateCount = 0;
+            lastResultFingerprint = null;
+            updateDupSkipBadge();
         });
     }
 
@@ -1412,6 +1761,7 @@ function init() {
     setupCamera();
     updateMirrorState();
     loadApiUsage();
+    restoreScanMode();
     // 初期設定を並列取得（片方が失敗しても他方に影響しない）
     Promise.allSettled([loadRateLimits(), loadProxyConfig()]);
 }

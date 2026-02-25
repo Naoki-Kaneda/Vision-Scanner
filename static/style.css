@@ -339,6 +339,27 @@ video {
     transition: width 0.05s linear;
 }
 
+.stability-bar-fill.cooldown {
+    background: #FFA726;
+    transition: width 1s linear;
+}
+
+.stability-bar-fill.interval-wait {
+    background: #42A5F5;
+    transition: width 0.3s ease-out;
+    animation: pulse-wait 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-wait {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.stability-bar-fill.paused-duplicate {
+    background: #AB47BC;
+    animation: pulse-wait 1s ease-in-out infinite;
+}
+
 .stability-help {
     color: var(--md-on-surface);
     font-size: 0.75rem;
@@ -375,6 +396,8 @@ video {
     font-size: 0.8rem;
     font-family: inherit;
     transition: all var(--md-motion-standard);
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .tool-btn:hover {
@@ -407,6 +430,7 @@ video {
     font-family: inherit;
     font-weight: 600;
     transition: all var(--md-motion-standard);
+    white-space: nowrap;
 }
 
 .mode-btn:last-child {
@@ -764,6 +788,24 @@ video {
     padding-top: 8px;
     position: relative;
     z-index: 50;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* ─── ワンショット/連続よみ切替ボタン ────── */
+.scan-mode-btn {
+    min-width: 8em;
+    text-align: center;
+    transition: background var(--md-motion-standard),
+                color var(--md-motion-standard),
+                border-color var(--md-motion-standard);
+}
+
+.scan-mode-btn.continuous-active {
+    background: rgba(0, 255, 136, 0.15);
+    color: #00ff88;
+    border-color: rgba(0, 255, 136, 0.5);
 }
 
 /* ─── ラベル検出 OK/NG 表示 ────────────────── */
