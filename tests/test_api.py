@@ -791,11 +791,12 @@ class TestHealthChecks:
         assert data["checks"]["rate_limiter_ok"] is False
         assert "warnings" in data
         assert len(data["warnings"]) > 0
-        assert "Redis" in data["warnings"][0]
+        assert any("Redis" in w for w in data["warnings"])
 
     @patch("app.REDIS_URL", "")
     @patch("app.get_backend_type", return_value="in_memory")
-    def test_readyzがRedis未設定のインメモリは正常扱い(self, _mock_backend, client):
+    @patch("app._validate_api_key_format", return_value=[])
+    def test_readyzがRedis未設定のインメモリは正常扱い(self, _mock_format, _mock_backend, client):
         """REDIS_URL未設定でインメモリの場合は意図的なので200を返すこと。"""
         response = client.get("/readyz")
         assert response.status_code == 200
