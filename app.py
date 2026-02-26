@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 from vision_api import detect_content, get_proxy_status, set_proxy_enabled, VALID_MODES, API_KEY
 from rate_limiter import (
     try_consume_request, release_request, RATE_LIMIT_DAILY,
-    get_backend_type, REDIS_URL,
+    get_backend_type, REDIS_URL, seconds_until_midnight,
 )
 
 # ─── 設定 ──────────────────────────────────────
@@ -290,14 +290,30 @@ def add_security_headers(response):
 
 
 # ─── レスポンスヘルパー ────────────────────────────
-def _error_response(error_code, message, status_code=400):
-    """標準化されたエラーレスポンスを生成する。"""
-    return jsonify({
+def _error_response(error_code, message, status_code=400, extra_fields=None, headers=None):
+    """標準化されたエラーレスポンスを生成する。
+
+    Args:
+        error_code: エラーコード文字列
+        message: エラーメッセージ
+        status_code: HTTPステータスコード
+        extra_fields: レスポンスJSONに追加するフィールド辞書
+        headers: レスポンスに追加するHTTPヘッダー辞書
+    """
+    body = {
         "ok": False,
         "data": [],
         "error_code": error_code,
         "message": message,
-    }), status_code
+    }
+    if extra_fields:
+        body.update(extra_fields)
+    response = jsonify(body)
+    response.status_code = status_code
+    if headers:
+        for key, value in headers.items():
+            response.headers[key] = value
+    return response
 
 
 # ─── Flaskエラーハンドラ（_error_response で統一） ─────
@@ -324,10 +340,15 @@ def handle_method_not_allowed(_e):
 
 
 def _log(level, event, **kwargs):
-    """構造化ログ出力（request-id自動付与）。"""
+    """構造化ログ出力（request-id自動付与、PII自動マスク）。"""
+    from pii_mask import mask_pii
     req_id = getattr(g, "request_id", "-")
     parts = [f"event={event}", f"request_id={req_id}"]
-    parts.extend(f"{k}={v}" for k, v in kwargs.items())
+    for k, v in kwargs.items():
+        # 文字列値にPIIマスキングを適用
+        if isinstance(v, str):
+            v = mask_pii(v)
+        parts.append(f"{k}={v}")
     getattr(logger, level)(" ".join(parts))
 
 
@@ -437,7 +458,11 @@ def update_proxy_config():
     # 管理APIブルートフォース防御: 短時間の連続失敗をブロック
     if _is_admin_blocked(client_ip):
         _log("warning", "admin_blocked", ip=client_ip, reason="too_many_failures")
-        return _error_response(ERR_RATE_LIMITED, "認証失敗が多すぎます。しばらく経ってから再試行してください", 429)
+        return _error_response(
+            ERR_RATE_LIMITED, "認証失敗が多すぎます。しばらく経ってから再試行してください", 429,
+            extra_fields={"retry_after": ADMIN_BLOCK_WINDOW},
+            headers={"Retry-After": str(ADMIN_BLOCK_WINDOW)},
+        )
 
     auth_header = request.headers.get("X-Admin-Secret", "")
     if not ADMIN_SECRET or not secrets.compare_digest(auth_header, ADMIN_SECRET):
@@ -542,10 +567,19 @@ def analyze_endpoint():
 
     # ─── レート制限チェック＆予約（原子的） ──
     client_ip = request.remote_addr or "unknown"
-    limited, limit_message, request_id = try_consume_request(client_ip)
+    limited, limit_message, request_id, limit_type = try_consume_request(client_ip)
     if limited:
-        _log("info", "rate_limited", ip=client_ip, reason=limit_message)
-        return _error_response(ERR_RATE_LIMITED, limit_message, 429)
+        _log("info", "rate_limited", ip=client_ip, reason=limit_message, limit_type=limit_type)
+        # Retry-After: 分間制限は60秒、日次制限は翌日0時までの秒数
+        if limit_type == "daily":
+            retry_after = seconds_until_midnight()
+        else:
+            retry_after = 60
+        return _error_response(
+            ERR_RATE_LIMITED, limit_message, 429,
+            extra_fields={"retry_after": retry_after, "limit_type": limit_type},
+            headers={"Retry-After": str(retry_after)},
+        )
 
     # ─── Vision API呼び出し ─────────────
     try:

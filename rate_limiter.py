@@ -22,7 +22,7 @@ RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "20"))
 RATE_LIMIT_DAILY = int(os.getenv("RATE_LIMIT_DAILY", "1000"))
 
 
-def _seconds_until_midnight():
+def seconds_until_midnight():
     """翌日0時までの残り秒数を返す（日付境界リセット用）。"""
     import datetime
     now = datetime.datetime.now()
@@ -90,14 +90,15 @@ class RedisRateLimiter:
         制限チェック＆予約を原子的に実行する。
 
         Returns:
-            tuple: (制限中か, エラーメッセージ, request_id|None)
+            tuple: (制限中か, エラーメッセージ, request_id|None, limit_type|None)
+                   limit_type は "daily" または "minute"（制限中のみ）
         """
         now = time.time()
         today = time.strftime("%Y-%m-%d")
         request_id = uuid.uuid4().hex[:12]
 
         # 翌日0時までの残り秒数（日付境界でリセットするため）
-        seconds_until_midnight = _seconds_until_midnight()
+        secs_to_midnight = seconds_until_midnight()
 
         minute_key = f"rate:minute:{client_ip}"
         daily_key = f"rate:daily:{client_ip}:{today}"
@@ -106,17 +107,17 @@ class RedisRateLimiter:
             self._LUA_CONSUME, 2, minute_key, daily_key,
             str(now), request_id,
             str(RATE_LIMIT_PER_MINUTE), str(RATE_LIMIT_DAILY),
-            str(seconds_until_midnight),
+            str(secs_to_midnight),
         )
 
         if result[0] == 1:
             reason = result[1] if isinstance(result[1], str) else result[1].decode()
             if reason == "daily":
-                return True, f"1日あたりのAPI上限({RATE_LIMIT_DAILY}回)に達しました", None
-            return True, f"リクエスト頻度が高すぎます（上限: {RATE_LIMIT_PER_MINUTE}回/分）", None
+                return True, f"1日あたりのAPI上限({RATE_LIMIT_DAILY}回)に達しました", None, "daily"
+            return True, f"リクエスト頻度が高すぎます（上限: {RATE_LIMIT_PER_MINUTE}回/分）", None, "minute"
 
         returned_id = result[1] if isinstance(result[1], str) else result[1].decode()
-        return False, "", returned_id
+        return False, "", returned_id, None
 
     def release(self, client_ip, request_id):
         """失敗時に指定IDの予約のみを取り消す。"""
@@ -153,7 +154,8 @@ class InMemoryRateLimiter:
         制限チェック＆予約を原子的に実行する。
 
         Returns:
-            tuple: (制限中か, エラーメッセージ, request_id|None)
+            tuple: (制限中か, エラーメッセージ, request_id|None, limit_type|None)
+                   limit_type は "daily" または "minute"（制限中のみ）
         """
         now = time.time()
         today = time.strftime("%Y-%m-%d")
@@ -164,19 +166,19 @@ class InMemoryRateLimiter:
                 daily = {"date": today, "count": 0}
 
             if daily["count"] >= RATE_LIMIT_DAILY:
-                return True, f"1日あたりのAPI上限({RATE_LIMIT_DAILY}回)に達しました", None
+                return True, f"1日あたりのAPI上限({RATE_LIMIT_DAILY}回)に達しました", None, "daily"
 
             entries = list(self._rate_store.get(client_ip, []))
             recent = [e for e in entries if now - e[0] < 60]
             if len(recent) >= RATE_LIMIT_PER_MINUTE:
-                return True, f"リクエスト頻度が高すぎます（上限: {RATE_LIMIT_PER_MINUTE}回/分）", None
+                return True, f"リクエスト頻度が高すぎます（上限: {RATE_LIMIT_PER_MINUTE}回/分）", None, "minute"
 
             request_id = uuid.uuid4().hex[:12]
             self._rate_store[client_ip] = recent + [(now, request_id)]
             daily["count"] += 1
             self._daily_store[client_ip] = daily
 
-        return False, "", request_id
+        return False, "", request_id, None
 
     def release(self, client_ip, request_id):
         """失敗時に指定IDの予約のみを取り消す。"""

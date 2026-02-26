@@ -434,7 +434,8 @@ def _parse_text_response(response_data):
     logger.info("textAnnotations件数: %d", len(text_annotations))
     if text_annotations:
         full_text = text_annotations[0].get("description", "")
-        logger.info("OCR全文テキスト（先頭100文字）: %s", full_text[:100])
+        from pii_mask import mask_pii
+        logger.info("OCR全文テキスト（先頭100文字）: %s", mask_pii(full_text[:100]))
     if not text_annotations:
         return [], None
 

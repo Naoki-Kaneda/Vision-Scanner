@@ -6,7 +6,7 @@ Vision AI Scanner - APIエンドポイントのテスト。
 import base64
 from unittest.mock import patch
 from tests.helpers import create_valid_image_base64, create_valid_png_base64
-from app import _admin_failures
+from app import _admin_failures, ADMIN_BLOCK_WINDOW
 
 
 # ─── 正常系テスト ──────────────────────────────────
@@ -980,3 +980,64 @@ class TestAdminBruteForceProtection:
         data = response.get_json()
         assert data["ok"] is False
         assert data["error_code"] == "RATE_LIMITED"
+
+
+# ─── Retry-After ヘッダーテスト ──────────────────
+class TestRetryAfterHeader:
+    """429レスポンスにRetry-Afterヘッダーが含まれることを検証する。"""
+
+    @patch("app.ADMIN_SECRET", "correct-secret-xyz")
+    def test_管理APIブロック時にRetryAfterヘッダーが付く(self, client):
+        """管理APIで5回認証失敗後、429にRetry-Afterヘッダーが含まれること。"""
+        _admin_failures.clear()
+        for _ in range(5):
+            client.post(
+                "/api/config/proxy",
+                json={"enabled": False},
+                headers={"X-Admin-Secret": "wrong-secret"},
+            )
+
+        response = client.post(
+            "/api/config/proxy",
+            json={"enabled": False},
+            headers={"X-Admin-Secret": "wrong-secret"},
+        )
+
+        assert response.status_code == 429
+        # Retry-Afterヘッダーがブロックウィンドウ秒数で設定されていること
+        assert response.headers.get("Retry-After") == str(ADMIN_BLOCK_WINDOW)
+        # JSONボディにもretry_afterが含まれること
+        data = response.get_json()
+        assert data["retry_after"] == ADMIN_BLOCK_WINDOW
+
+    @patch("app.detect_content")
+    def test_分間レート制限時にRetryAfterヘッダーが付く(self, mock_detect, client):
+        """分間レート制限の429にRetry-After: 60が含まれること。"""
+        from rate_limiter import RATE_LIMIT_PER_MINUTE
+
+        mock_detect.return_value = {
+            "ok": True,
+            "data": [{"label": "test", "bounds": [[0, 0], [1, 0], [1, 1], [0, 1]]}],
+            "image_size": [100, 100],
+            "error_code": None,
+            "message": None,
+        }
+
+        # 分間上限まで正常リクエストを送信
+        for _ in range(RATE_LIMIT_PER_MINUTE):
+            client.post("/api/analyze", json={
+                "image": create_valid_image_base64(),
+                "mode": "text",
+            })
+
+        # 上限超過リクエスト
+        response = client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "text",
+        })
+
+        assert response.status_code == 429
+        assert response.headers.get("Retry-After") == "60"
+        data = response.get_json()
+        assert data["retry_after"] == 60
+        assert data["limit_type"] == "minute"
