@@ -1,0 +1,9 @@
+# 本番依存（トップレベルのみ）
+# pip-compile requirements.in -o requirements-lock.txt で lock ファイルを再生成
+Flask>=3.1,<4
+requests>=2.32,<3
+python-dotenv>=1.2,<2
+Pillow>=12.1,<13
+cachetools>=5.5,<6
+redis>=5.2,<6
+gunicorn>=23,<24

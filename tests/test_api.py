@@ -587,6 +587,43 @@ class TestSecurityHeaders:
         response = client.get("/")
         assert "X-XSS-Protection" not in response.headers
 
+    def test_X_Content_Type_Optionsヘッダが存在する(self, client):
+        """MIMEスニッフィング防止ヘッダが設定されていること。"""
+        response = client.get("/")
+        assert response.headers.get("X-Content-Type-Options") == "nosniff"
+
+    def test_X_Frame_Optionsヘッダが存在する(self, client):
+        """クリックジャッキング防止ヘッダがDENYで設定されていること。"""
+        response = client.get("/")
+        assert response.headers.get("X-Frame-Options") == "DENY"
+
+    def test_Referrer_Policyヘッダが存在する(self, client):
+        """リファラー情報の漏洩を制限するヘッダが設定されていること。"""
+        response = client.get("/")
+        assert response.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+
+    def test_Permissions_Policyヘッダが存在する(self, client):
+        """ブラウザ権限制御ヘッダでカメラのみ許可されていること。"""
+        response = client.get("/")
+        pp = response.headers.get("Permissions-Policy")
+        assert pp is not None
+        assert "camera=(self)" in pp
+        assert "microphone=()" in pp
+
+    def test_Cache_Controlヘッダが存在する(self, client):
+        """ブラウザキャッシュ無効化ヘッダが設定されていること。"""
+        response = client.get("/")
+        cc = response.headers.get("Cache-Control")
+        assert cc is not None
+        assert "no-store" in cc
+
+    def test_APIレスポンスにもセキュリティヘッダが付与される(self, client):
+        """HTMLページだけでなくAPIエンドポイントにもセキュリティヘッダが付くこと。"""
+        response = client.get("/api/config/limits")
+        assert response.headers.get("X-Content-Type-Options") == "nosniff"
+        assert response.headers.get("X-Frame-Options") == "DENY"
+        assert "Content-Security-Policy" in response.headers
+
 
 # ─── Request-ID テスト ──────────────────────────
 class TestRequestId:

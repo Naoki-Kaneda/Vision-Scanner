@@ -1,0 +1,9 @@
+# 開発・テスト依存
+# pip-compile requirements-dev.in -o requirements-dev-lock.txt で lock ファイルを再生成
+-r requirements.in
+pytest>=9,<10
+ruff>=0.9,<1
+bandit>=1.8,<2
+pip-audit>=2.7,<3
+playwright>=1.49,<2
+pip-tools>=7,<8
