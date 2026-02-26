@@ -7,7 +7,12 @@ types モジュールとの名前衝突を回避するため。
 
 from __future__ import annotations
 
-from typing import NotRequired, TypedDict
+import sys
+
+if sys.version_info >= (3, 11):
+    from typing import NotRequired, TypedDict
+else:
+    from typing_extensions import NotRequired, TypedDict
 
 
 # ─── 座標型 ──────────────────────────────────────
