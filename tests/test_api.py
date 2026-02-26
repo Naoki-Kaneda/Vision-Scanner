@@ -1208,3 +1208,36 @@ class TestDryRun:
         })
         assert response.status_code == 400
         assert response.get_json()["error_code"] == "INVALID_BASE64"
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ロケールファイル配信テスト
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+class TestLocaleFiles:
+    """フロントエンドi18n用ロケールJSONファイルの配信テスト。"""
+
+    def test_jaロケールファイルが配信される(self, client):
+        """ja.jsonが200で返りJSON解析可能であること。"""
+        response = client.get("/static/locales/ja.json")
+        assert response.status_code == 200
+        data = response.get_json()
+        assert isinstance(data, dict)
+        assert "scan" in data
+        assert "mode" in data
+
+    def test_enロケールファイルが配信される(self, client):
+        """en.jsonが200で返りJSON解析可能であること。"""
+        response = client.get("/static/locales/en.json")
+        assert response.status_code == 200
+        data = response.get_json()
+        assert isinstance(data, dict)
+        assert "scan" in data
+        assert "mode" in data
+
+    def test_ロケールファイルのキー構造が一致する(self, client):
+        """ja.jsonとen.jsonのトップレベルキーが同一であること。"""
+        ja = client.get("/static/locales/ja.json").get_json()
+        en = client.get("/static/locales/en.json").get_json()
+        assert set(ja.keys()) == set(en.keys()), (
+            f"トップレベルキーの不一致: ja={set(ja.keys())}, en={set(en.keys())}"
+        )

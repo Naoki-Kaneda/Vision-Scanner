@@ -1,0 +1,122 @@
+{
+  "scan": {
+    "start": "スタート",
+    "stop": "ストップ",
+    "analyzing": "解析中",
+    "waiting": "待機中",
+    "scanning": "スキャン中",
+    "ready": "準備完了",
+    "readyRestart": "準備完了 ― スタートで再スキャン",
+    "doneRestart": "完了 ― スタートで再スキャン",
+    "analyzingDots": "解析中...",
+    "waitingNext": "完了 ― 次のスキャンまで待機中...",
+    "skipSameImage": "前回と同じ画像のためスキップ",
+    "cooldownAfter": "クールダウン終了後にスキャンを開始します",
+    "rateLimited": "⏳ リクエスト制限中... あと{seconds}秒",
+    "duplicatePaused": "同じ内容を検出済み ― カメラを動かしてください",
+    "retryIn": "⚠ エラー ― {seconds}秒後に再試行"
+  },
+  "mode": {
+    "text": "テキスト",
+    "object": "物体",
+    "label": "ラベル",
+    "face": "顔",
+    "logo": "ロゴ",
+    "classify": "分類",
+    "web": "Web"
+  },
+  "result": {
+    "placeholder": "スキャンして検出を開始...",
+    "clear": "クリア",
+    "detected": "検出結果",
+    "noFace": "顔が検出されませんでした",
+    "noClassify": "分類タグが検出されませんでした",
+    "noWebMatch": "Web上で一致する情報が見つかりませんでした",
+    "confidence": "確信度: {percent}%"
+  },
+  "camera": {
+    "button": "カメラ",
+    "file": "ファイル",
+    "flipOut": "⟳ 外カメ",
+    "flipIn": "⟳ インカメ",
+    "mirror": "↔ 反転",
+    "device": "カメラ {index}",
+    "generalError": "カメラにアクセスできませんでした。",
+    "httpsRequired": "HTTPS環境でないため、カメラを使用できません。HTTPSでアクセスしてください。",
+    "notAllowed": "カメラの使用が許可されていません。ブラウザの設定でカメラアクセスを許可してください。",
+    "notFound": "有効なカメラが見つかりません。カメラが接続されているか確認してください。",
+    "notReadable": "カメラが他のアプリケーションで使用中です。",
+    "playFailed": "⚠ カメラ映像の再生に失敗しました",
+    "fileSizeOver": "ファイルサイズが上限（{size}MB）を超えています"
+  },
+  "settings": {
+    "oneShot": "1x ワンショット",
+    "continuous": "∞ 連続よみ",
+    "switchToContinuous": "連続よみに切替",
+    "switchToOneShot": "ワンショットに切替",
+    "dryRunOn": "TEST ON",
+    "dryRunOff": "TEST",
+    "dryRunActiveTitle": "テストモード有効中（APIキー消費なし）",
+    "dryRunInactiveTitle": "テストモードに切替（APIキー消費なし）",
+    "proxyOn": "Proxy設定: ON",
+    "proxyOff": "Proxy設定: OFF",
+    "configFetchFailed": "設定取得に失敗しました",
+    "stabilityHelp": "カメラを静止させてください"
+  },
+  "error": {
+    "serverError": "⚠ サーバーエラー ({status})",
+    "dailyLimit": "本日のAPI上限に達しました",
+    "dailyLimitBtn": "本日の上限に到達",
+    "rateLimited": "リクエスト制限中",
+    "apiLimitReached": "⚠ API上限に達しました（本日分）",
+    "apiLimitBtn": "API上限（本日分）",
+    "timeout": "⚠ タイムアウト",
+    "networkError": "⚠ 通信エラー"
+  },
+  "emotion": {
+    "joy": "喜び",
+    "sorrow": "悲しみ",
+    "anger": "怒り",
+    "surprise": "驚き"
+  },
+  "likelihood": {
+    "VERY_UNLIKELY": "非常に低い",
+    "UNLIKELY": "低い",
+    "POSSIBLE": "あり得る",
+    "LIKELY": "高い",
+    "VERY_LIKELY": "非常に高い"
+  },
+  "web": {
+    "guess": "推定: {name}",
+    "entities": "関連キーワード",
+    "pages": "関連ページ",
+    "similarImages": "類似画像"
+  },
+  "dupSkip": {
+    "paused": "重複停止中",
+    "pausedTitle": "同じ内容を{count}回連続検出 ― カメラを動かすと再開",
+    "countingTitle": "同じ内容を{count}回連続検出中（{max}回でスキップ）"
+  },
+  "help": {
+    "title": "モード説明",
+    "close": "ヘルプを閉じる",
+    "textDesc": "カメラに映った文字を読み取ります（OCR）。書類、看板、名刺などのテキスト抽出に最適です。",
+    "objectDesc": "映像内の物体を検出し、名前と位置を表示します。ボトル、箱、機器などを自動認識します。",
+    "labelDesc": "ラベルの有無を判定します。テキストが読み取れれば OK、読み取れなければ NG と表示します。検査間隔は5秒です。",
+    "faceDesc": "顔を検出し、表情（喜び・悲しみ・怒り・驚き）を分析します。複数の顔を同時に検出できます。",
+    "logoDesc": "画像内のブランドロゴを検出し、名前とスコアを表示します。商品パッケージの確認に便利です。",
+    "classifyDesc": "画像全体をAIが分類し、タグ付けします。「何が映っているか」を概要として把握できます。",
+    "webDesc": "類似画像をWeb上から検索し、推定名・関連ページ・類似画像のリンクを表示します。",
+    "settingsTitle": "設定",
+    "scanModeLabel": "スキャンモード",
+    "oneShotDesc": "1回撮影したら結果を表示して停止します。",
+    "continuousDesc": "解析完了後も自動的にスキャンを継続し、次の安定フレームを検出して解析を繰り返します。",
+    "dupSkipLabel": "重複スキップ回数",
+    "dupSkipDesc": "同じ内容を指定回数読み取ったら、カメラが動くまで一時停止します。",
+    "dupSkipUnit": "{count}回"
+  },
+  "lang": {
+    "switchTitle": "言語切替",
+    "switchAria": "言語を切り替える"
+  }
+}

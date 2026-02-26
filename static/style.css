@@ -134,6 +134,27 @@ h1 {
     line-height: 1;
 }
 
+/* ─── 言語切替ボタン ─────────────────────────── */
+.lang-btn {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--md-on-surface-variant);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: var(--md-shape-corner-full);
+    padding: 3px 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    transition: background var(--md-motion-standard), color var(--md-motion-standard);
+    letter-spacing: 0.05em;
+    line-height: 1;
+}
+
+.lang-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: var(--md-primary);
+}
+
 .proxy-badge {
     display: inline-flex;
     align-items: center;

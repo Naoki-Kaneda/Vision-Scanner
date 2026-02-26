@@ -2,6 +2,103 @@
 // Vision AI Scanner - フロントエンドスクリプト
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// ─── i18n（国際化） ──────────────────────────────────
+let _i18nMessages = {};
+let _currentLang = 'ja';
+
+/**
+ * 指定ロケールのJSONを読み込み、DOM上のdata-i18n属性を一括適用する。
+ * @param {string} lang - 'ja' または 'en'
+ */
+async function loadLocale(lang) {
+    try {
+        const res = await fetch(`/static/locales/${lang}.json`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        _i18nMessages = await res.json();
+        _currentLang = lang;
+        _applyI18nToDom();
+        // 言語ボタンの表示を更新
+        const btnLang = document.getElementById('btn-lang');
+        if (btnLang) btnLang.textContent = lang.toUpperCase();
+    } catch (e) {
+        console.warn(`ロケール ${lang} の読み込みに失敗、jaにフォールバック`);
+        if (lang !== 'ja') await loadLocale('ja');
+    }
+}
+
+/**
+ * ドット区切りキーでロケール文字列を取得する。
+ * {placeholder} 形式のテンプレート変数を params で置換する。
+ * @param {string} key - 'scan.start' のようなドット区切りキー
+ * @param {Object} [params] - テンプレート変数（例: {seconds: 10}）
+ * @returns {string} 翻訳文字列。キーが見つからない場合はキー自体を返す。
+ */
+function t(key, params) {
+    const keys = key.split('.');
+    let val = _i18nMessages;
+    for (const k of keys) {
+        if (val && typeof val === 'object' && k in val) {
+            val = val[k];
+        } else {
+            return key;
+        }
+    }
+    if (typeof val !== 'string') return key;
+    if (!params) return val;
+    return val.replace(/\{(\w+)\}/g, (_, name) =>
+        name in params ? params[name] : `{${name}}`
+    );
+}
+
+/** DOM上の data-i18n / data-i18n-title / data-i18n-aria 属性を一括適用する。 */
+function _applyI18nToDom() {
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        const translated = t(key);
+        if (translated !== key) el.textContent = translated;
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+        const key = el.getAttribute('data-i18n-title');
+        const translated = t(key);
+        if (translated !== key) el.title = translated;
+    });
+    document.querySelectorAll('[data-i18n-aria]').forEach(el => {
+        const key = el.getAttribute('data-i18n-aria');
+        const translated = t(key);
+        if (translated !== key) el.setAttribute('aria-label', translated);
+    });
+}
+
+/** ブラウザ言語またはlocalStorageの保存値から初期言語を検出する。 */
+function detectLanguage() {
+    const stored = localStorage.getItem('visionLang');
+    if (stored === 'ja' || stored === 'en') return stored;
+    const nav = navigator.language || 'ja';
+    return nav.startsWith('ja') ? 'ja' : 'en';
+}
+
+/** 日本語⇔英語を切り替えてロケールを再読み込みする。 */
+function toggleLanguage() {
+    const newLang = _currentLang === 'ja' ? 'en' : 'ja';
+    localStorage.setItem('visionLang', newLang);
+    loadLocale(newLang);
+    // JS側で動的生成されるテキストも再適用
+    _refreshDynamicTexts();
+}
+
+/** 言語切替後に動的テキスト（ボタン等）を再適用する。 */
+function _refreshDynamicTexts() {
+    updateScanModeButton();
+    updateDryRunButton();
+    updateFlipButton();
+    if (btnProxy) updateProxyButton(currentProxyEnabled);
+    syncUI(scanState);
+    updateDupSkipBadge();
+    // 結果プレースホルダーが表示中なら更新
+    const placeholder = document.querySelector('.placeholder-text');
+    if (placeholder) placeholder.textContent = t('result.placeholder');
+}
+
 // ─── 定数・設定 ──────────────────────────────────
 let API_DAILY_LIMIT = 1000;           // 1日のAPI呼び出し上限（サーバーから動的取得）
 const API_WARNING_RATIO = 0.8;       // API上限の警告表示閾値（80%で黄色）
@@ -239,7 +336,7 @@ function syncUI(state) {
     }
     switch (state) {
         case ScanState.IDLE:
-            _setBtnScanContent('▶', 'スタート');
+            _setBtnScanContent('▶', t('scan.start'));
             if (btnScan) { btnScan.disabled = false; btnScan.classList.remove('scanning'); }
             if (videoContainer) videoContainer.classList.remove('scanning');
             if (statusDot) statusDot.classList.remove('active');
@@ -247,26 +344,26 @@ function syncUI(state) {
             _resetStabilityBar();
             break;
         case ScanState.SCANNING:
-            _setBtnScanContent('■', 'ストップ');
+            _setBtnScanContent('■', t('scan.stop'));
             if (btnScan) { btnScan.disabled = false; btnScan.classList.add('scanning'); }
             if (videoContainer) videoContainer.classList.add('scanning');
             if (statusDot) statusDot.classList.add('active');
             break;
         case ScanState.ANALYZING:
-            _setBtnScanContent('⏳', '解析中');
+            _setBtnScanContent('⏳', t('scan.analyzing'));
             if (btnScan) { btnScan.disabled = true; btnScan.classList.remove('scanning'); }
             if (videoContainer) videoContainer.classList.remove('scanning');
             if (statusDot) statusDot.classList.remove('active');
             if (stabilityBarContainer) stabilityBarContainer.classList.add('hidden');
             break;
         case ScanState.PAUSED_ERROR:
-            _setBtnScanContent('■', 'ストップ');
+            _setBtnScanContent('■', t('scan.stop'));
             if (btnScan) { btnScan.disabled = false; btnScan.classList.add('scanning'); }
             if (videoContainer) videoContainer.classList.add('scanning');
             if (statusDot) statusDot.classList.add('active');
             break;
         case ScanState.PAUSED_DUPLICATE:
-            _setBtnScanContent('■', 'ストップ');
+            _setBtnScanContent('■', t('scan.stop'));
             if (btnScan) { btnScan.disabled = false; btnScan.classList.add('scanning'); }
             if (videoContainer) videoContainer.classList.add('scanning');
             if (statusDot) statusDot.classList.add('active');
@@ -274,7 +371,7 @@ function syncUI(state) {
             _setStabilityBarState('paused-duplicate');
             break;
         case ScanState.COOLDOWN:
-            _setBtnScanContent('⏳', '待機中');
+            _setBtnScanContent('⏳', t('scan.waiting'));
             if (btnScan) {
                 btnScan.disabled = true;
                 btnScan.style.opacity = '0.5';
@@ -307,7 +404,7 @@ function startCooldownCountdown(seconds) {
         } else {
             const progress = (cooldownRemaining / totalSeconds) * 100;
             if (stabilityBarFill) stabilityBarFill.style.width = progress + '%';
-            if (statusText) statusText.textContent = `⏳ リクエスト制限中... あと${cooldownRemaining}秒`;
+            if (statusText) statusText.textContent = t('scan.rateLimited', { seconds: cooldownRemaining });
         }
     }, 1000);
 }
@@ -321,7 +418,7 @@ function stopCooldownCountdown() {
     if (wasActive && scanState === ScanState.COOLDOWN) {
         scanState = ScanState.IDLE;
         syncUI(ScanState.IDLE);
-        if (statusText) statusText.textContent = '準備完了 ― スタートで再スキャン';
+        if (statusText) statusText.textContent = t('scan.readyRestart');
     }
 
     if (shouldRestartAfterCooldown) {
@@ -356,12 +453,12 @@ function updateScanModeButton() {
     const btn = document.getElementById('btn-scan-mode');
     if (!btn) return;
     if (isSingleShot) {
-        btn.textContent = '1x ワンショット';
-        btn.title = '連続よみに切替';
+        btn.textContent = t('settings.oneShot');
+        btn.title = t('settings.switchToContinuous');
         btn.classList.remove('continuous-active');
     } else {
-        btn.textContent = '∞ 連続よみ';
-        btn.title = 'ワンショットに切替';
+        btn.textContent = t('settings.continuous');
+        btn.title = t('settings.switchToOneShot');
         btn.classList.add('continuous-active');
     }
 }
@@ -388,9 +485,9 @@ function restoreDryRun() {
 function updateDryRunButton() {
     const btn = document.getElementById('btn-dry-run');
     if (!btn) return;
-    btn.textContent = isDryRun ? 'TEST ON' : 'TEST';
+    btn.textContent = isDryRun ? t('settings.dryRunOn') : t('settings.dryRunOff');
     btn.classList.toggle('dry-run-active', isDryRun);
-    btn.title = isDryRun ? 'テストモード有効中（APIキー消費なし）' : 'テストモードに切替（APIキー消費なし）';
+    btn.title = isDryRun ? t('settings.dryRunActiveTitle') : t('settings.dryRunInactiveTitle');
 }
 
 
@@ -436,7 +533,7 @@ async function loadProxyConfig() {
         }
     } catch (err) {
         console.error('プロキシ設定取得エラー:', err);
-        if (btnProxy) btnProxy.title = '設定取得に失敗しました';
+        if (btnProxy) btnProxy.title = t('settings.configFetchFailed');
     }
 }
 
@@ -446,10 +543,10 @@ function updateProxyButton(isEnabled) {
     if (!btnProxy) return;
 
     if (isEnabled) {
-        btnProxy.textContent = 'Proxy設定: ON';
+        btnProxy.textContent = t('settings.proxyOn');
         btnProxy.className = 'proxy-badge active';
     } else {
-        btnProxy.textContent = 'Proxy設定: OFF';
+        btnProxy.textContent = t('settings.proxyOff');
         btnProxy.className = 'proxy-badge inactive';
     }
 }
@@ -467,7 +564,7 @@ async function loadRateLimits() {
         }
     } catch (err) {
         console.error('レート制限設定取得エラー:', err);
-        if (apiCounter) apiCounter.title = '設定取得に失敗しました';
+        if (apiCounter) apiCounter.title = t('settings.configFetchFailed');
     }
 }
 
@@ -507,7 +604,7 @@ function updateApiCounter() {
 
     // 既定ではボタンロックを行わない（サーバー側のレート制限を信頼）
     if (ENFORCE_CLIENT_DAILY_LIMIT && apiCallCount >= API_DAILY_LIMIT) {
-        disableScanButton('API上限（本日分）');
+        disableScanButton(t('error.apiLimitBtn'));
     } else if (btnScan) {
         btnScan.disabled = false;
         btnScan.style.opacity = '';
@@ -518,9 +615,9 @@ function updateApiCounter() {
 /** API上限に達しているか判定する。達している場合はスキャンを停止。 */
 function isApiLimitReached() {
     if (ENFORCE_CLIENT_DAILY_LIMIT && apiCallCount >= API_DAILY_LIMIT) {
-        statusText.textContent = '⚠ API上限に達しました（本日分）';
+        statusText.textContent = t('error.apiLimitReached');
         stopScanning();
-        disableScanButton('API上限（本日分）');
+        disableScanButton(t('error.apiLimitBtn'));
         return true;
     }
     return false;
@@ -569,7 +666,7 @@ async function setupCamera(deviceId = null) {
         video.srcObject = stream;
         await video.play().catch((err) => {
             console.warn('映像再生の開始に失敗:', err.name);
-            if (statusText) statusText.textContent = '⚠ カメラ映像の再生に失敗しました';
+            if (statusText) statusText.textContent = t('camera.playFailed');
         });
         currentSource = 'camera';
         updateSourceButtons();
@@ -592,15 +689,15 @@ async function setupCamera(deviceId = null) {
     } catch (err) {
         console.error('カメラアクセスエラー:', err);
         // エラー種別に応じてユーザーに具体的な解決策を提示
-        let msg = 'カメラにアクセスできませんでした。';
+        let msg = t('camera.generalError');
         if (!window.isSecureContext) {
-            msg = 'HTTPS環境でないため、カメラを使用できません。HTTPSでアクセスしてください。';
+            msg = t('camera.httpsRequired');
         } else if (err.name === 'NotAllowedError') {
-            msg = 'カメラの使用が許可されていません。ブラウザの設定でカメラアクセスを許可してください。';
+            msg = t('camera.notAllowed');
         } else if (err.name === 'NotFoundError') {
-            msg = '有効なカメラが見つかりません。カメラが接続されているか確認してください。';
+            msg = t('camera.notFound');
         } else if (err.name === 'NotReadableError') {
-            msg = 'カメラが他のアプリケーションで使用中です。';
+            msg = t('camera.notReadable');
         }
         if (statusText) statusText.textContent = msg;
     }
@@ -628,7 +725,7 @@ async function populateCameraSelector() {
             const option = document.createElement('option');
             option.value = device.deviceId;
             // ラベルがない場合（権限未付与時など）は番号で表示
-            option.textContent = device.label || `カメラ ${index + 1}`;
+            option.textContent = device.label || t('camera.device', { index: index + 1 });
             cameraSelector.appendChild(option);
         });
     } else {
@@ -657,8 +754,8 @@ function toggleFacingMode() {
 function updateFlipButton() {
     if (!btnFlipCam) return;
     btnFlipCam.textContent = currentFacingMode === 'environment'
-        ? '⟳ 外カメ'
-        : '⟳ インカメ';
+        ? t('camera.flipOut')
+        : t('camera.flipIn');
 }
 
 /**
@@ -727,7 +824,7 @@ function handleFileUpload(event) {
     // クライアント側サイズチェック（サーバー負荷軽減と即時フィードバック）
     if (file.size > MAX_UPLOAD_SIZE) {
         if (statusText) {
-            statusText.textContent = `ファイルサイズが上限（${MAX_UPLOAD_SIZE / (1024 * 1024)}MB）を超えています`;
+            statusText.textContent = t('camera.fileSizeOver', { size: MAX_UPLOAD_SIZE / (1024 * 1024) });
         }
         event.target.value = '';  // 選択をリセット
         return;
@@ -776,7 +873,7 @@ function toggleScanning() {
     // クールダウン中: 終了後に自動開始するフラグを立てる
     if (scanState === ScanState.COOLDOWN) {
         shouldRestartAfterCooldown = true;
-        if (statusText) statusText.textContent = 'クールダウン終了後にスキャンを開始します';
+        if (statusText) statusText.textContent = t('scan.cooldownAfter');
         return;
     }
 
@@ -799,7 +896,7 @@ function startScanning() {
     lastResultFingerprint = null;
     updateDupSkipBadge();
 
-    if (statusText) statusText.textContent = 'スキャン中';
+    if (statusText) statusText.textContent = t('scan.scanning');
     if (stabilityBarContainer) stabilityBarContainer.classList.remove('hidden');
     _resetStabilityBar();
 
@@ -824,7 +921,7 @@ function stopScanning() {
     syncUI(ScanState.IDLE);
 
     clearOverlay();
-    if (statusText) statusText.textContent = '準備完了';
+    if (statusText) statusText.textContent = t('scan.ready');
 
     lastFrameData = null;
     stabilityCounter = 0;
@@ -912,7 +1009,7 @@ function checkStabilityAndCapture() {
                     stabilityBarFill.style.width = '100%';
                     stabilityBarFill.classList.add('captured');
                 }
-                if (statusText) statusText.textContent = '解析中...';
+                if (statusText) statusText.textContent = t('scan.analyzingDots');
                 captureAndAnalyze();
                 stabilityCounter = 0;
 
@@ -925,7 +1022,7 @@ function checkStabilityAndCapture() {
                     if (scanState === ScanState.SCANNING && currentMode === capturedMode) {
                         lastStabilityState = 'idle';
                         _resetStabilityBar();
-                        if (statusText) statusText.textContent = 'スキャン中';
+                        if (statusText) statusText.textContent = t('scan.scanning');
                     }
                 }, resetDelay);
             }
@@ -938,7 +1035,7 @@ function checkStabilityAndCapture() {
                 }
                 duplicateCount = 0;
                 lastResultFingerprint = null;
-                if (statusText) statusText.textContent = 'スキャン中';
+                if (statusText) statusText.textContent = t('scan.scanning');
                 updateDupSkipBadge();
             }
             _resetStabilityBar();
@@ -1081,7 +1178,7 @@ async function captureAndAnalyze() {
         const similarity = compareImageHash(currentHash, lastSentImageHash);
         if (similarity >= IMAGE_HASH_THRESHOLD) {
             console.log(`画像ハッシュ一致 (${(similarity * 100).toFixed(1)}%) — スキップ`);
-            if (statusText) statusText.textContent = '前回と同じ画像のためスキップ';
+            if (statusText) statusText.textContent = t('scan.skipSameImage');
             // 連続よみモード: 停止せず次のスキャンへ
             if (!isSingleShot && wasStreamingScan) {
                 transitionTo(ScanState.SCANNING);
@@ -1093,7 +1190,7 @@ async function captureAndAnalyze() {
                 return;
             }
             transitionTo(ScanState.IDLE);
-            if (statusText) statusText.textContent = '完了 ― スタートで再スキャン';
+            if (statusText) statusText.textContent = t('scan.doneRestart');
             return;
         }
     }
@@ -1122,7 +1219,7 @@ async function captureAndAnalyze() {
         try {
             result = await response.json();
         } catch {
-            if (statusText) statusText.textContent = `⚠ サーバーエラー (${response.status})`;
+            if (statusText) statusText.textContent = t('error.serverError', { status: response.status });
             return;
         }
 
@@ -1130,14 +1227,14 @@ async function captureAndAnalyze() {
         if (response.status === 429) {
             // 日次上限の場合はスキャンを完全停止
             if (result.limit_type === 'daily') {
-                if (statusText) statusText.textContent = `⚠ ${result.message || '本日のAPI上限に達しました'}`;
-                disableScanButton('本日の上限に到達');
+                if (statusText) statusText.textContent = `⚠ ${result.message || t('error.dailyLimit')}`;
+                disableScanButton(t('error.dailyLimitBtn'));
                 return;
             }
             const retryAfter = parseInt(
                 result.retry_after || response.headers.get('Retry-After') || '10', 10
             );
-            if (statusText) statusText.textContent = `⚠ ${result.message || 'リクエスト制限中'}`;
+            if (statusText) statusText.textContent = `⚠ ${result.message || t('error.rateLimited')}`;
             transitionTo(ScanState.COOLDOWN);
             startCooldownCountdown(retryAfter);
             return;
@@ -1157,7 +1254,7 @@ async function captureAndAnalyze() {
                 duplicateCount++;
                 if (duplicateCount >= DUPLICATE_SKIP_COUNT) {
                     _pendingDuplicatePause = true;
-                    if (statusText) statusText.textContent = '同じ内容を検出済み ― カメラを動かしてください';
+                    if (statusText) statusText.textContent = t('scan.duplicatePaused');
                 }
             } else {
                 duplicateCount = fingerprint ? 1 : 0;
@@ -1180,14 +1277,14 @@ async function captureAndAnalyze() {
                 drawBoundingBoxes(result.data, result.image_size);
                 result.data.forEach(item => addFaceResult(item));
             } else {
-                addNoResultMessage('顔が検出されませんでした');
+                addNoResultMessage(t('result.noFace'));
             }
         // 分類タグモード: タグバッジ表示
         } else if (result.ok && currentMode === 'classify') {
             if (result.data && result.data.length > 0) {
                 addClassifyResult(result.data);
             } else {
-                addNoResultMessage('分類タグが検出されませんでした');
+                addNoResultMessage(t('result.noClassify'));
             }
         // Web類似検索モード: カード表示
         } else if (result.ok && currentMode === 'web') {
@@ -1199,7 +1296,7 @@ async function captureAndAnalyze() {
                 .filter(isValidResult)
                 .forEach(addResultItem);
         } else if (!result.ok) {
-            const errorMsg = result.message || `サーバーエラー (${result.error_code})`;
+            const errorMsg = result.message || t('error.serverError', { status: result.error_code });
             if (statusText) statusText.textContent = `⚠ ${errorMsg}`;
             console.error(`APIエラー [${result.error_code}]:`, result.message);
         }
@@ -1212,9 +1309,9 @@ async function captureAndAnalyze() {
         }
         // タイムアウトまたは通信失敗
         if (err.name === 'AbortError') {
-            if (statusText) statusText.textContent = '⚠ タイムアウト';
+            if (statusText) statusText.textContent = t('error.timeout');
         } else {
-            if (statusText) statusText.textContent = '⚠ 通信エラー';
+            if (statusText) statusText.textContent = t('error.networkError');
         }
         console.error('通信エラー:', err);
 
@@ -1240,7 +1337,7 @@ async function captureAndAnalyze() {
                 transitionTo(ScanState.SCANNING);
                 if (stabilityBarContainer) stabilityBarContainer.classList.remove('hidden');
                 _setStabilityBarState('interval-wait');
-                if (statusText) statusText.textContent = '完了 ― 次のスキャンまで待機中...';
+                if (statusText) statusText.textContent = t('scan.waitingNext');
 
                 continuousDelayTimerId = setTimeout(() => {
                     continuousDelayTimerId = null;
@@ -1248,7 +1345,7 @@ async function captureAndAnalyze() {
                     _resetStabilityBar();
                     stabilityCounter = 0;
                     lastStabilityState = 'idle';
-                    if (statusText) statusText.textContent = 'スキャン中';
+                    if (statusText) statusText.textContent = t('scan.scanning');
                     scanRafId = requestAnimationFrame(scanLoop);
                 }, CONTINUOUS_SCAN_INTERVAL_MS);
 
@@ -1260,7 +1357,7 @@ async function captureAndAnalyze() {
 
         // ワンショット成功完了時のメッセージ
         if (succeeded && scanState === ScanState.IDLE) {
-            if (statusText) statusText.textContent = '完了 ― スタートで再スキャン';
+            if (statusText) statusText.textContent = t('scan.doneRestart');
         }
     }
 }
@@ -1283,13 +1380,13 @@ function scheduleRetry() {
     );
     const delaySec = Math.ceil(delay / 1000);
 
-    if (statusText) statusText.textContent = `⚠ エラー ― ${delaySec}秒後に再試行`;
+    if (statusText) statusText.textContent = t('scan.retryIn', { seconds: delaySec });
 
     retryTimerId = setTimeout(() => {
         retryTimerId = null;
         if (scanState === ScanState.PAUSED_ERROR) {
             transitionTo(ScanState.SCANNING);
-            if (statusText) statusText.textContent = 'スキャン中';
+            if (statusText) statusText.textContent = t('scan.scanning');
             if (scanRafId) cancelAnimationFrame(scanRafId);
             scanRafId = requestAnimationFrame(scanLoop);
         }
@@ -1359,14 +1456,14 @@ function updateDupSkipBadge() {
         // 一時停止中 → 赤系パルス
         dupSkipBadge.classList.remove('counting');
         dupSkipBadge.classList.add('paused');
-        dupSkipBadge.textContent = '重複停止中';
-        dupSkipBadge.title = `同じ内容を${duplicateCount}回連続検出 ― カメラを動かすと再開`;
+        dupSkipBadge.textContent = t('dupSkip.paused');
+        dupSkipBadge.title = t('dupSkip.pausedTitle', { count: duplicateCount });
     } else {
         // カウント中 → グレー表示
         dupSkipBadge.classList.remove('paused');
         dupSkipBadge.classList.add('counting');
         dupSkipBadge.textContent = `${duplicateCount}/${DUPLICATE_SKIP_COUNT}`;
-        dupSkipBadge.title = `同じ内容を${duplicateCount}回連続検出中（${DUPLICATE_SKIP_COUNT}回でスキップ）`;
+        dupSkipBadge.title = t('dupSkip.countingTitle', { count: duplicateCount, max: DUPLICATE_SKIP_COUNT });
     }
 }
 
@@ -1461,7 +1558,7 @@ function addFaceResult(item) {
     header.className = 'face-header';
     const confSpan = document.createElement('span');
     confSpan.className = 'face-confidence';
-    confSpan.textContent = `確信度: ${(item.confidence * 100).toFixed(0)}%`;
+    confSpan.textContent = t('result.confidence', { percent: (item.confidence * 100).toFixed(0) });
     header.appendChild(_createTimestampSpan());
     header.appendChild(confSpan);
 
@@ -1470,11 +1567,13 @@ function addFaceResult(item) {
     grid.className = 'emotion-grid';
 
     const emotionLabels = {
-        joy: '喜び', sorrow: '悲しみ', anger: '怒り', surprise: '驚き',
+        joy: t('emotion.joy'), sorrow: t('emotion.sorrow'),
+        anger: t('emotion.anger'), surprise: t('emotion.surprise'),
     };
     const likelihoodLabels = {
-        VERY_UNLIKELY: '非常に低い', UNLIKELY: '低い', POSSIBLE: 'あり得る',
-        LIKELY: '高い', VERY_LIKELY: '非常に高い',
+        VERY_UNLIKELY: t('likelihood.VERY_UNLIKELY'), UNLIKELY: t('likelihood.UNLIKELY'),
+        POSSIBLE: t('likelihood.POSSIBLE'), LIKELY: t('likelihood.LIKELY'),
+        VERY_LIKELY: t('likelihood.VERY_LIKELY'),
     };
 
     if (item.emotions) {
@@ -1553,7 +1652,7 @@ function addWebResult(webDetail, data) {
     if (webDetail.best_guess) {
         const guess = document.createElement('div');
         guess.className = 'web-best-guess';
-        guess.textContent = `推定: ${webDetail.best_guess}`;
+        guess.textContent = t('web.guess', { name: webDetail.best_guess });
         div.appendChild(guess);
     }
 
@@ -1561,7 +1660,7 @@ function addWebResult(webDetail, data) {
     if (webDetail.entities && webDetail.entities.length > 0) {
         const title = document.createElement('div');
         title.className = 'web-section-title';
-        title.textContent = '関連キーワード';
+        title.textContent = t('web.entities');
         div.appendChild(title);
 
         webDetail.entities.forEach(entity => {
@@ -1576,7 +1675,7 @@ function addWebResult(webDetail, data) {
     if (webDetail.pages && webDetail.pages.length > 0) {
         const title = document.createElement('div');
         title.className = 'web-section-title';
-        title.textContent = '関連ページ';
+        title.textContent = t('web.pages');
         div.appendChild(title);
 
         webDetail.pages.forEach(page => {
@@ -1596,7 +1695,7 @@ function addWebResult(webDetail, data) {
     if (webDetail.similar_images && webDetail.similar_images.length > 0) {
         const title = document.createElement('div');
         title.className = 'web-section-title';
-        title.textContent = '類似画像';
+        title.textContent = t('web.similarImages');
         div.appendChild(title);
 
         webDetail.similar_images.forEach(url => {
@@ -1615,7 +1714,7 @@ function addWebResult(webDetail, data) {
     if (!webDetail.best_guess && (!webDetail.entities || webDetail.entities.length === 0)) {
         const empty = document.createElement('div');
         empty.className = 'web-entity';
-        empty.textContent = 'Web上で一致する情報が見つかりませんでした';
+        empty.textContent = t('result.noWebMatch');
         div.appendChild(empty);
     }
 
@@ -1644,7 +1743,7 @@ function clearResults() {
     }
     const placeholder = document.createElement('div');
     placeholder.className = 'placeholder-text';
-    placeholder.textContent = 'スキャンして検出を開始...';
+    placeholder.textContent = t('result.placeholder');
     resultList.appendChild(placeholder);
 }
 
@@ -1695,7 +1794,10 @@ function setMode(mode) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /** アプリケーションを初期化する。 */
-function init() {
+async function init() {
+    // ─── i18n初期化（DOM操作より前にロケールを読み込む） ──
+    const lang = detectLanguage();
+    await loadLocale(lang);
     // ─── DOM要素の取得（DOMContentLoaded 保証下で安全に取得） ──
     videoContainer = document.querySelector('.video-container');
     video = document.getElementById('video-feed');
@@ -1775,6 +1877,10 @@ function init() {
     const btnDryRun = document.getElementById('btn-dry-run');
     if (btnDryRun) btnDryRun.addEventListener('click', toggleDryRun);
 
+    // 言語切替ボタン
+    const btnLang = document.getElementById('btn-lang');
+    if (btnLang) btnLang.addEventListener('click', toggleLanguage);
+
     // ヘルプポップアップの開閉
     const btnHelp = document.getElementById('btn-help');
     const helpPopup = document.getElementById('help-popup');
@@ -1811,12 +1917,12 @@ function init() {
                 dupSlider.value = parsed;
             }
         }
-        if (dupValue) dupValue.textContent = DUPLICATE_SKIP_COUNT + '回';
+        if (dupValue) dupValue.textContent = t('help.dupSkipUnit', { count: DUPLICATE_SKIP_COUNT });
 
         dupSlider.addEventListener('input', (e) => {
             const val = parseInt(e.target.value, 10);
             DUPLICATE_SKIP_COUNT = val;
-            if (dupValue) dupValue.textContent = val + '回';
+            if (dupValue) dupValue.textContent = t('help.dupSkipUnit', { count: val });
             localStorage.setItem('duplicateSkipCount', val);
             // 変更時に重複状態をリセット（新しい閾値を即座に反映）
             if (scanState === ScanState.PAUSED_DUPLICATE) {

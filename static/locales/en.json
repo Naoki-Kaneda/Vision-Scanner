@@ -1,0 +1,122 @@
+{
+  "scan": {
+    "start": "Start",
+    "stop": "Stop",
+    "analyzing": "Analyzing",
+    "waiting": "Waiting",
+    "scanning": "Scanning",
+    "ready": "Ready",
+    "readyRestart": "Ready — Press Start to rescan",
+    "doneRestart": "Done — Press Start to rescan",
+    "analyzingDots": "Analyzing...",
+    "waitingNext": "Done — Waiting for next scan...",
+    "skipSameImage": "Same image as before, skipped",
+    "cooldownAfter": "Scan will resume after cooldown",
+    "rateLimited": "⏳ Rate limited... {seconds}s remaining",
+    "duplicatePaused": "Duplicate detected — Move the camera",
+    "retryIn": "⚠ Error — Retrying in {seconds}s"
+  },
+  "mode": {
+    "text": "Text",
+    "object": "Object",
+    "label": "Label",
+    "face": "Face",
+    "logo": "Logo",
+    "classify": "Classify",
+    "web": "Web"
+  },
+  "result": {
+    "placeholder": "Scan to start detection...",
+    "clear": "Clear",
+    "detected": "Results",
+    "noFace": "No face detected",
+    "noClassify": "No classification tags detected",
+    "noWebMatch": "No matching information found on the web",
+    "confidence": "Confidence: {percent}%"
+  },
+  "camera": {
+    "button": "Camera",
+    "file": "File",
+    "flipOut": "⟳ Rear",
+    "flipIn": "⟳ Front",
+    "mirror": "↔ Mirror",
+    "device": "Camera {index}",
+    "generalError": "Could not access the camera.",
+    "httpsRequired": "Camera requires HTTPS. Please access via HTTPS.",
+    "notAllowed": "Camera access denied. Please allow camera access in browser settings.",
+    "notFound": "No camera found. Please check your camera connection.",
+    "notReadable": "Camera is in use by another application.",
+    "playFailed": "⚠ Failed to start camera playback",
+    "fileSizeOver": "File size exceeds the limit ({size}MB)"
+  },
+  "settings": {
+    "oneShot": "1x One-shot",
+    "continuous": "∞ Continuous",
+    "switchToContinuous": "Switch to continuous",
+    "switchToOneShot": "Switch to one-shot",
+    "dryRunOn": "TEST ON",
+    "dryRunOff": "TEST",
+    "dryRunActiveTitle": "Test mode active (no API key usage)",
+    "dryRunInactiveTitle": "Switch to test mode (no API key usage)",
+    "proxyOn": "Proxy: ON",
+    "proxyOff": "Proxy: OFF",
+    "configFetchFailed": "Failed to fetch settings",
+    "stabilityHelp": "Hold the camera steady"
+  },
+  "error": {
+    "serverError": "⚠ Server error ({status})",
+    "dailyLimit": "Daily API limit reached",
+    "dailyLimitBtn": "Daily limit reached",
+    "rateLimited": "Rate limited",
+    "apiLimitReached": "⚠ API limit reached (today)",
+    "apiLimitBtn": "API limit (today)",
+    "timeout": "⚠ Timeout",
+    "networkError": "⚠ Network error"
+  },
+  "emotion": {
+    "joy": "Joy",
+    "sorrow": "Sorrow",
+    "anger": "Anger",
+    "surprise": "Surprise"
+  },
+  "likelihood": {
+    "VERY_UNLIKELY": "Very Unlikely",
+    "UNLIKELY": "Unlikely",
+    "POSSIBLE": "Possible",
+    "LIKELY": "Likely",
+    "VERY_LIKELY": "Very Likely"
+  },
+  "web": {
+    "guess": "Guess: {name}",
+    "entities": "Related Keywords",
+    "pages": "Related Pages",
+    "similarImages": "Similar Images"
+  },
+  "dupSkip": {
+    "paused": "Dup. Paused",
+    "pausedTitle": "Same content detected {count} times — Move camera to resume",
+    "countingTitle": "Same content detected {count} times ({max} to skip)"
+  },
+  "help": {
+    "title": "Mode Guide",
+    "close": "Close help",
+    "textDesc": "Reads text from the camera (OCR). Ideal for extracting text from documents, signs, and business cards.",
+    "objectDesc": "Detects objects in the image and displays their names and positions. Automatically recognizes bottles, boxes, equipment, etc.",
+    "labelDesc": "Checks for label presence. Shows OK if text is readable, NG otherwise. Inspection interval is 5 seconds.",
+    "faceDesc": "Detects faces and analyzes emotions (joy, sorrow, anger, surprise). Can detect multiple faces simultaneously.",
+    "logoDesc": "Detects brand logos in images and displays names with confidence scores. Useful for product package verification.",
+    "classifyDesc": "AI classifies the entire image and adds tags. Get an overview of what's in the image.",
+    "webDesc": "Searches the web for similar images and displays estimated names, related pages, and similar image links.",
+    "settingsTitle": "Settings",
+    "scanModeLabel": "Scan Mode",
+    "oneShotDesc": "Takes one shot, shows the result, and stops.",
+    "continuousDesc": "Continues scanning automatically after analysis, detecting the next stable frame.",
+    "dupSkipLabel": "Duplicate Skip Count",
+    "dupSkipDesc": "Pauses scanning after detecting the same content a specified number of times until the camera moves.",
+    "dupSkipUnit": "{count} times"
+  },
+  "lang": {
+    "switchTitle": "Switch language",
+    "switchAria": "Switch language"
+  }
+}
