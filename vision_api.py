@@ -19,7 +19,7 @@ import urllib3
 from dotenv import load_dotenv
 from PIL import Image, ImageEnhance
 
-from _types import (
+from vision_types import (
     BoundingBox,
     ClassifyDataItem,
     DataItem,

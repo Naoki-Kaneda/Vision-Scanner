@@ -3,7 +3,7 @@
 Google Cloud Vision APIの各種検出結果を日本語で表示するために使用。
 """
 
-from _types import TranslationDict
+from vision_types import TranslationDict
 
 OBJECT_TRANSLATIONS: TranslationDict = {
     # 人物・身体

@@ -41,7 +41,7 @@ jobs:
         run: python -m ruff check .
 
       - name: mypy 型チェック
-        run: python -m mypy app.py vision_api.py rate_limiter.py pii_mask.py translations.py _types.py
+        run: python -m mypy app.py vision_api.py rate_limiter.py pii_mask.py translations.py vision_types.py
 
       - name: Bandit セキュリティスキャン
         run: python -m bandit -r . --exclude ./tests,./venv,./.venv -q

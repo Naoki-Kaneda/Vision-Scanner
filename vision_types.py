@@ -1,8 +1,8 @@
 """
 型定義モジュール。
 プロジェクト全体で使用する TypedDict とタイプエイリアスを一元管理する。
-ファイル名が types.py でなく _types.py なのは、Python標準ライブラリの
-types モジュールとの名前衝突を回避するため。
+ファイル名を vision_types.py としているのは、Python標準ライブラリの types および
+CPython内部モジュール _types との名前衝突を回避するため。
 """
 
 from __future__ import annotations

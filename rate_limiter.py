@@ -12,7 +12,7 @@ import logging
 from threading import Lock
 from typing import Any
 
-from _types import ConsumeResult
+from vision_types import ConsumeResult
 
 from dotenv import load_dotenv
 
