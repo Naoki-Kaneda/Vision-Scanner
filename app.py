@@ -133,6 +133,23 @@ _admin_failures = defaultdict(list)   # {ip: [timestamp, ...]}
 _admin_lock = Lock()
 
 
+# ─── メトリクス（スレッドセーフ） ──────────────────
+_metrics = defaultdict(int)
+_metrics_lock = Lock()
+
+
+def _record_metric(name, increment=1):
+    """メトリクスカウンターをインクリメントする（スレッドセーフ）。"""
+    with _metrics_lock:
+        _metrics[name] += increment
+
+
+def _reset_metrics_for_testing():
+    """テスト用: メトリクスカウンターをリセットする。"""
+    with _metrics_lock:
+        _metrics.clear()
+
+
 def _record_admin_failure(client_ip):
     """管理API認証失敗を記録する。"""
     with _admin_lock:
@@ -424,6 +441,43 @@ def readyz():
     return jsonify(response_data), 200 if all_ok else 503
 
 
+# ─── メトリクスエンドポイント（Prometheus互換） ───────
+@app.route("/metrics")
+def metrics_endpoint():
+    """Prometheus互換テキスト形式でメトリクスを返す。"""
+    with _metrics_lock:
+        snapshot = dict(_metrics)
+
+    lines = []
+    # カウンター: api_requests_total
+    lines.append("# HELP vision_api_requests_total API解析リクエスト総数")
+    lines.append("# TYPE vision_api_requests_total counter")
+    for status in ("success", "api_error", "server_error"):
+        key = f"api_requests_total__{status}"
+        lines.append(f'vision_api_requests_total{{status="{status}"}} {snapshot.get(key, 0)}')
+
+    # カウンター: rate_limited_total
+    lines.append("# HELP vision_rate_limited_total レート制限発動回数")
+    lines.append("# TYPE vision_rate_limited_total counter")
+    lines.append(f"vision_rate_limited_total {snapshot.get('rate_limited_total', 0)}")
+
+    # カウンター: dry_run_total
+    lines.append("# HELP vision_dry_run_total Dry Runリクエスト総数")
+    lines.append("# TYPE vision_dry_run_total counter")
+    lines.append(f"vision_dry_run_total {snapshot.get('dry_run_total', 0)}")
+
+    # モード別カウンター
+    lines.append("# HELP vision_requests_by_mode モード別リクエスト数")
+    lines.append("# TYPE vision_requests_by_mode counter")
+    for key, val in sorted(snapshot.items()):
+        if key.startswith("mode__"):
+            mode_name = key.replace("mode__", "")
+            lines.append(f'vision_requests_by_mode{{mode="{mode_name}"}} {val}')
+
+    response_text = "\n".join(lines) + "\n"
+    return response_text, 200, {"Content-Type": "text/plain; version=0.0.4; charset=utf-8"}
+
+
 # ─── ルーティング ────────────────────────────────
 @app.route("/")
 def index():
@@ -486,29 +540,29 @@ def update_proxy_config():
 
 def _validate_analyze_request():
     """
-    /api/analyze のリクエストを検証し、画像データとモードを返す。
+    /api/analyze のリクエストを検証し、画像データ・モード・Dry Runフラグを返す。
 
     Returns:
-        tuple: (image_data, mode, None) 成功時
-               (None, None, error_response) 失敗時
+        tuple: (image_data, mode, dry_run, None) 成功時
+               (None, None, None, error_response) 失敗時
     """
     if not request.is_json:
-        return None, None, _error_response(ERR_INVALID_FORMAT, "リクエストはJSON形式である必要があります")
+        return None, None, None, _error_response(ERR_INVALID_FORMAT, "リクエストはJSON形式である必要があります")
 
     data = request.get_json(silent=True)
     if data is None:
-        return None, None, _error_response(ERR_INVALID_FORMAT, "JSONのパースに失敗しました")
+        return None, None, None, _error_response(ERR_INVALID_FORMAT, "JSONのパースに失敗しました")
 
     if not isinstance(data, dict):
-        return None, None, _error_response(ERR_INVALID_FORMAT, "リクエストボディはJSONオブジェクトである必要があります")
+        return None, None, None, _error_response(ERR_INVALID_FORMAT, "リクエストボディはJSONオブジェクトである必要があります")
 
     image_data = data.get("image")
     if not image_data or not isinstance(image_data, str) or not image_data.strip():
-        return None, None, _error_response(ERR_MISSING_IMAGE, "画像データがありません")
+        return None, None, None, _error_response(ERR_MISSING_IMAGE, "画像データがありません")
 
     mode = data.get("mode", "text")
     if mode not in VALID_MODES:
-        return None, None, _error_response(ERR_INVALID_MODE, f"不正なモード: '{mode}'。許可値: {list(VALID_MODES)}")
+        return None, None, None, _error_response(ERR_INVALID_MODE, f"不正なモード: '{mode}'。許可値: {list(VALID_MODES)}")
 
     # data:image/jpeg;base64, プレフィックスを除去
     if "," in image_data:
@@ -518,20 +572,96 @@ def _validate_analyze_request():
     try:
         decoded = base64.b64decode(image_data, validate=True)
         if len(decoded) > MAX_IMAGE_SIZE:
-            return None, None, _error_response(
+            return None, None, None, _error_response(
                 ERR_IMAGE_TOO_LARGE,
                 f"画像サイズが上限({MAX_IMAGE_SIZE // (1024*1024)}MB)を超えています",
             )
         # MIME magic byte 検証（JPEG/PNGのみ許可）
         if not _validate_image_format(decoded):
-            return None, None, _error_response(
+            return None, None, None, _error_response(
                 ERR_INVALID_IMAGE_FORMAT,
                 "許可されていない画像形式です（JPEG/PNGのみ対応）",
             )
     except Exception:
-        return None, None, _error_response(ERR_INVALID_BASE64, "画像データのBase64デコードに失敗しました")
+        return None, None, None, _error_response(ERR_INVALID_BASE64, "画像データのBase64デコードに失敗しました")
 
-    return image_data, mode, None
+    dry_run = data.get("dry_run", False) is True
+    return image_data, mode, dry_run, None
+
+
+# ─── Dry Run ダミーレスポンス定義 ─────────────────────
+_DRY_RUN_RESPONSES = {
+    "text": {
+        "ok": True,
+        "data": [
+            {"label": "[DRY RUN] サンプルテキスト - Hello World",
+             "bounds": [[10, 20], [200, 20], [200, 50], [10, 50]]},
+        ],
+        "image_size": [640, 480],
+        "error_code": None, "message": None,
+    },
+    "object": {
+        "ok": True,
+        "data": [
+            {"label": "[DRY RUN] Cup（カップ）- 92%",
+             "bounds": [[0.2, 0.3], [0.6, 0.3], [0.6, 0.8], [0.2, 0.8]]},
+        ],
+        "image_size": None,
+        "error_code": None, "message": None,
+    },
+    "label": {
+        "ok": True,
+        "data": [{"label": "[DRY RUN] ラベルあり"}],
+        "image_size": None,
+        "error_code": None, "message": None,
+        "label_detected": True,
+        "label_reason": "[DRY RUN] テストデータ: テキスト検出済み",
+    },
+    "face": {
+        "ok": True,
+        "data": [
+            {"label": "[DRY RUN] 顔1: 喜び=高い",
+             "bounds": [[0.1, 0.1], [0.4, 0.1], [0.4, 0.5], [0.1, 0.5]]},
+        ],
+        "image_size": [640, 480],
+        "error_code": None, "message": None,
+    },
+    "logo": {
+        "ok": True,
+        "data": [
+            {"label": "[DRY RUN] SampleLogo - 88%",
+             "bounds": [[0.2, 0.2], [0.5, 0.2], [0.5, 0.4], [0.2, 0.4]]},
+        ],
+        "image_size": [640, 480],
+        "error_code": None, "message": None,
+    },
+    "classify": {
+        "ok": True,
+        "data": [
+            {"label": "[DRY RUN] 電子機器 - 95%"},
+            {"label": "[DRY RUN] ガジェット - 88%"},
+        ],
+        "image_size": None,
+        "error_code": None, "message": None,
+    },
+    "web": {
+        "ok": True,
+        "data": [{"label": "[DRY RUN] サンプル画像"}],
+        "image_size": None,
+        "error_code": None, "message": None,
+        "web_detail": {
+            "best_guess": "[DRY RUN] テスト画像",
+            "entities": [{"name": "Test Object", "score": 0.95}],
+            "pages": [],
+            "similar_images": [],
+        },
+    },
+}
+
+
+def _generate_dry_run_response(mode):
+    """Dry Runモード用のダミーレスポンスを返す。"""
+    return _DRY_RUN_RESPONSES.get(mode, _DRY_RUN_RESPONSES["text"])
 
 
 @app.route("/api/analyze", methods=["OPTIONS"])
@@ -561,14 +691,25 @@ def analyze_endpoint():
         message: エラーメッセージ（エラー時のみ）
     """
     # ─── リクエスト検証 ─────────────────
-    image_data, mode, validation_error = _validate_analyze_request()
+    image_data, mode, dry_run, validation_error = _validate_analyze_request()
     if validation_error:
         return validation_error
 
-    # ─── レート制限チェック＆予約（原子的） ──
     client_ip = request.remote_addr or "unknown"
+
+    # ─── Dry Runモード: APIキーもレート制限も消費しない ──
+    if dry_run:
+        _record_metric("dry_run_total")
+        _record_metric(f"mode__{mode}")
+        _log("info", "dry_run", ip=client_ip, mode=mode)
+        return jsonify(_generate_dry_run_response(mode)), 200
+
+    # ─── レート制限チェック＆予約（原子的） ──
+    _record_metric(f"mode__{mode}")
+
     limited, limit_message, request_id, limit_type = try_consume_request(client_ip)
     if limited:
+        _record_metric("rate_limited_total")
         _log("info", "rate_limited", ip=client_ip, reason=limit_message, limit_type=limit_type)
         # Retry-After: 分間制限は60秒、日次制限は翌日0時までの秒数
         if limit_type == "daily":
@@ -586,8 +727,10 @@ def analyze_endpoint():
         result = detect_content(image_data, mode, request_id=g.request_id)
 
         if result["ok"]:
+            _record_metric("api_requests_total__success")
             _log("info", "api_success", ip=client_ip, mode=mode, items=len(result["data"]))
         else:
+            _record_metric("api_requests_total__api_error")
             release_request(client_ip, request_id)
             _log("warning", "api_failure", ip=client_ip, mode=mode, error_code=result["error_code"])
 
@@ -600,6 +743,7 @@ def analyze_endpoint():
         return _error_response(ERR_VALIDATION_ERROR, str(e))
 
     except Exception as e:
+        _record_metric("api_requests_total__server_error")
         release_request(client_ip, request_id)
         _log("error", "server_error", ip=client_ip, mode=mode, error=str(e))
         return _error_response(ERR_SERVER_ERROR, "内部サーバーエラーが発生しました", 500)

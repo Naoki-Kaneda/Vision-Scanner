@@ -308,6 +308,23 @@ video {
     box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.3);
 }
 
+/* ─── モーション感度インジケーター ─────────────── */
+.motion-indicator {
+    position: absolute;
+    bottom: 50px;
+    right: 12px;
+    font-family: 'Inter', monospace;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(0, 0, 0, 0.6);
+    color: hsl(120, 80%, 60%);
+    padding: 3px 8px;
+    border-radius: var(--md-shape-corner-full);
+    z-index: 16;
+    pointer-events: none;
+    transition: color 0.15s ease;
+}
+
 /* ─── 安定化プログレスバー（MD3 Linear Progress） ─ */
 .stability-bar-container {
     position: absolute;
@@ -806,6 +823,20 @@ video {
     background: rgba(0, 255, 136, 0.15);
     color: #00ff88;
     border-color: rgba(0, 255, 136, 0.5);
+}
+
+/* ─── Dry Run テストモードボタン ──────────── */
+.dry-run-btn {
+    min-width: 6em;
+    text-align: center;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+.dry-run-btn.dry-run-active {
+    background: rgba(255, 183, 77, 0.15);
+    color: #FFB74D;
+    border-color: rgba(255, 183, 77, 0.5);
 }
 
 /* ─── ラベル検出 OK/NG 表示 ────────────────── */

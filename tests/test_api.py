@@ -1041,3 +1041,170 @@ class TestRetryAfterHeader:
         data = response.get_json()
         assert data["retry_after"] == 60
         assert data["limit_type"] == "minute"
+
+
+# ─── メトリクスエンドポイント テスト ─────────────────────
+class TestMetricsEndpoint:
+    """Prometheus互換メトリクスエンドポイントのテスト。"""
+
+    def setup_method(self):
+        """各テスト前にメトリクスカウンターをリセットする。"""
+        from app import _reset_metrics_for_testing
+        _reset_metrics_for_testing()
+
+    def test_metricsエンドポイントが200を返す(self, client):
+        """GET /metrics が200を返すこと。"""
+        response = client.get("/metrics")
+        assert response.status_code == 200
+
+    def test_metricsのContent_TypeがPrometheus形式(self, client):
+        """Content-Typeがtext/plain形式であること。"""
+        response = client.get("/metrics")
+        ct = response.headers.get("Content-Type", "")
+        assert "text/plain" in ct
+
+    @patch("app.detect_content")
+    def test_API成功後にカウントが増加する(self, mock_detect, client):
+        """analyze成功後に /metrics のsuccess カウントが1になること。"""
+        mock_detect.return_value = {
+            "ok": True, "data": [], "image_size": None,
+            "error_code": None, "message": None,
+        }
+        client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "text",
+        })
+        response = client.get("/metrics")
+        body = response.data.decode("utf-8")
+        assert 'vision_api_requests_total{status="success"} 1' in body
+        assert 'vision_requests_by_mode{mode="text"} 1' in body
+
+    def test_レート制限後にカウントが増加する(self, client):
+        """分間レート制限発動後にrate_limited_totalが増加すること。"""
+        from rate_limiter import RATE_LIMIT_PER_MINUTE
+        # 上限まで送信（バリデーションだけ通る有効画像が必要）
+        with patch("app.detect_content") as mock_detect:
+            mock_detect.return_value = {
+                "ok": True, "data": [], "image_size": None,
+                "error_code": None, "message": None,
+            }
+            for _ in range(RATE_LIMIT_PER_MINUTE):
+                client.post("/api/analyze", json={
+                    "image": create_valid_image_base64(),
+                    "mode": "text",
+                })
+        # 上限超過
+        client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "text",
+        })
+        response = client.get("/metrics")
+        body = response.data.decode("utf-8")
+        assert "vision_rate_limited_total 1" in body
+
+    def test_初期状態のカウンターは全てゼロ(self, client):
+        """リセット直後は全カウンターが0であること。"""
+        response = client.get("/metrics")
+        body = response.data.decode("utf-8")
+        assert 'vision_api_requests_total{status="success"} 0' in body
+        assert "vision_rate_limited_total 0" in body
+        assert "vision_dry_run_total 0" in body
+
+
+# ─── Dry Run テストモード テスト ─────────────────────
+class TestDryRun:
+    """APIキー消費なしのDry Runモードのテスト。"""
+
+    def test_dry_runでtextモードのダミーレスポンスが返る(self, client):
+        """dry_run=Trueでtextモードのダミーレスポンスが返ること。"""
+        response = client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "text",
+            "dry_run": True,
+        })
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["ok"] is True
+        assert "[DRY RUN]" in data["data"][0]["label"]
+
+    def test_dry_runでobjectモードのダミーレスポンスが返る(self, client):
+        """dry_run=Trueでobjectモードのダミーレスポンスが返ること。"""
+        response = client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "object",
+            "dry_run": True,
+        })
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["ok"] is True
+        assert "[DRY RUN]" in data["data"][0]["label"]
+
+    def test_dry_runでlabelモードのダミーレスポンスが返る(self, client):
+        """dry_run=Trueでlabelモードのダミーレスポンスが返ること。"""
+        response = client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "label",
+            "dry_run": True,
+        })
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["ok"] is True
+        assert "label_detected" in data
+        assert data["label_detected"] is True
+
+    def test_dry_runでwebモードのダミーレスポンスが返る(self, client):
+        """dry_run=Trueでwebモードのダミーレスポンスが返ること。"""
+        response = client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "web",
+            "dry_run": True,
+        })
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["ok"] is True
+        assert "web_detail" in data
+        assert "[DRY RUN]" in data["web_detail"]["best_guess"]
+
+    def test_dry_runでレート制限カウントが増加しない(self, client):
+        """dry_runリクエストはレート制限カウントに影響しないこと。"""
+        from rate_limiter import get_daily_count
+        client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "text",
+            "dry_run": True,
+        })
+        assert get_daily_count("127.0.0.1") == 0
+
+    @patch("app.detect_content")
+    def test_dry_runでVision_APIが呼ばれない(self, mock_detect, client):
+        """dry_run=TrueではVision APIが一切呼ばれないこと。"""
+        client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "text",
+            "dry_run": True,
+        })
+        mock_detect.assert_not_called()
+
+    @patch("app.detect_content")
+    def test_dry_run_falseは通常通りAPIを呼ぶ(self, mock_detect, client):
+        """dry_run=Falseでは通常通りVision APIが呼ばれること。"""
+        mock_detect.return_value = {
+            "ok": True, "data": [], "image_size": None,
+            "error_code": None, "message": None,
+        }
+        client.post("/api/analyze", json={
+            "image": create_valid_image_base64(),
+            "mode": "text",
+            "dry_run": False,
+        })
+        mock_detect.assert_called_once()
+
+    def test_dry_runでも画像バリデーションは実行される(self, client):
+        """dry_run=Trueでも不正画像はバリデーションエラーになること。"""
+        response = client.post("/api/analyze", json={
+            "image": "!!!invalid-base64!!!",
+            "mode": "text",
+            "dry_run": True,
+        })
+        assert response.status_code == 400
+        assert response.get_json()["error_code"] == "INVALID_BASE64"

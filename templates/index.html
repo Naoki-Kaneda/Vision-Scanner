@@ -44,6 +44,7 @@
                     <canvas id="overlay-canvas"></canvas>
                     <div class="scan-overlay"></div>
                     <div class="target-box"></div>
+                    <span id="motion-indicator" class="motion-indicator hidden" aria-hidden="true"></span>
                     <div id="stability-bar-container" class="stability-bar-container hidden">
                         <div class="stability-bar-track">
                             <div id="stability-bar-fill" class="stability-bar-fill"></div>
@@ -134,6 +135,7 @@
                         <span class="icon" aria-hidden="true">▶</span> スタート
                     </button>
                     <button id="btn-scan-mode" class="tool-btn scan-mode-btn" title="連続よみに切替" aria-label="ワンショットと連続よみを切り替える">1x ワンショット</button>
+                    <button id="btn-dry-run" class="tool-btn dry-run-btn" title="テストモードに切替（APIキー消費なし）" aria-label="テストモードの切り替え">TEST</button>
                 </div>
 
                 <!-- キャプチャ用非表示キャンバス -->

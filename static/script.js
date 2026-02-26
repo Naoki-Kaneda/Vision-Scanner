@@ -127,6 +127,7 @@ let lastFrameData = null;
 let stabilityCounter = 0;
 let scanRafId = null;                // cancelAnimationFrame用ID
 let analyzeAbortController = null;   // 解析fetch中断用AbortController
+let isDryRun = false;                // Dry Runモード（APIキー消費なしテスト）
 
 // 差分検出用キャンバス（毎フレーム生成せず再利用）
 const motionCanvas = document.createElement('canvas');
@@ -226,6 +227,15 @@ function syncUI(state) {
     if (btnScan) {
         btnScan.style.opacity = '';
         btnScan.style.cursor = '';
+    }
+    // モーションインジケーター: SCANNING/PAUSED_DUPLICATE以外は非表示
+    const motionInd = document.getElementById('motion-indicator');
+    if (motionInd) {
+        if (state === ScanState.SCANNING || state === ScanState.PAUSED_DUPLICATE) {
+            motionInd.classList.remove('hidden');
+        } else {
+            motionInd.classList.add('hidden');
+        }
     }
     switch (state) {
         case ScanState.IDLE:
@@ -354,6 +364,33 @@ function updateScanModeButton() {
         btn.title = 'ワンショットに切替';
         btn.classList.add('continuous-active');
     }
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Dry Runモード（APIキー消費なしテスト）
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/** Dry Runモードを切り替える。 */
+function toggleDryRun() {
+    isDryRun = !isDryRun;
+    localStorage.setItem('visionDryRun', isDryRun ? '1' : '0');
+    updateDryRunButton();
+}
+
+/** localStorageからDry Runモードを復元する。 */
+function restoreDryRun() {
+    isDryRun = localStorage.getItem('visionDryRun') === '1';
+    updateDryRunButton();
+}
+
+/** Dry Runボタンの表示を更新する。 */
+function updateDryRunButton() {
+    const btn = document.getElementById('btn-dry-run');
+    if (!btn) return;
+    btn.textContent = isDryRun ? 'TEST ON' : 'TEST';
+    btn.classList.toggle('dry-run-active', isDryRun);
+    btn.title = isDryRun ? 'テストモード有効中（APIキー消費なし）' : 'テストモードに切替（APIキー消費なし）';
 }
 
 
@@ -826,6 +863,17 @@ function _calcFrameDiff(currentFrameData) {
     return diff / (motionCanvas.width * motionCanvas.height);
 }
 
+/** モーション感度インジケーターを更新する（HSL色相: 緑→赤）。 */
+function _updateMotionIndicator(avgDiff) {
+    const indicator = document.getElementById('motion-indicator');
+    if (!indicator) return;
+    // MOTION_THRESHOLDの2倍を上限としてスケール（0→緑、高→赤）
+    const ratio = Math.min(avgDiff / (MOTION_THRESHOLD * 2), 1.0);
+    const hue = Math.round(120 * (1 - ratio));
+    indicator.style.color = `hsl(${hue}, 80%, 60%)`;
+    indicator.textContent = `\u0394 ${avgDiff.toFixed(0)}`;
+}
+
 /**
  * フレーム間差分で安定状態を検出し、安定したらキャプチャする。
  * statusText は状態遷移時のみ更新（チラつき防止）。進捗はプログレスバーのみ。
@@ -840,6 +888,7 @@ function checkStabilityAndCapture() {
 
     if (lastFrameData) {
         const avgDiff = _calcFrameDiff(currentFrameData);
+        _updateMotionIndicator(avgDiff);
 
         if (avgDiff < MOTION_THRESHOLD) {
             // 安定状態
@@ -1064,7 +1113,7 @@ async function captureAndAnalyze() {
         const response = await fetch('/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: imageData, mode: currentMode }),
+            body: JSON.stringify({ image: imageData, mode: currentMode, dry_run: isDryRun }),
             signal: controller.signal,
         });
 
@@ -1722,6 +1771,10 @@ function init() {
     const btnScanMode = document.getElementById('btn-scan-mode');
     if (btnScanMode) btnScanMode.addEventListener('click', toggleScanMode);
 
+    // Dry Runモード切替ボタン
+    const btnDryRun = document.getElementById('btn-dry-run');
+    if (btnDryRun) btnDryRun.addEventListener('click', toggleDryRun);
+
     // ヘルプポップアップの開閉
     const btnHelp = document.getElementById('btn-help');
     const helpPopup = document.getElementById('help-popup');
@@ -1784,6 +1837,7 @@ function init() {
     updateMirrorState();
     loadApiUsage();
     restoreScanMode();
+    restoreDryRun();
     // 初期設定を並列取得（片方が失敗しても他方に影響しない）
     Promise.allSettled([loadRateLimits(), loadProxyConfig()]);
 }
