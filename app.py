@@ -3,6 +3,8 @@ Vision AI Scanner - メインアプリケーション。
 カメラ映像からテキスト抽出・物体検出を行うWebアプリケーション。
 """
 
+from __future__ import annotations
+
 import os
 import base64
 import hashlib
@@ -12,8 +14,9 @@ import socket
 import time
 from collections import defaultdict
 from threading import Lock
+from typing import Any
 
-from flask import Flask, render_template, request, jsonify, g
+from flask import Flask, render_template, request, jsonify, g, Response as FlaskResponse
 from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
 from vision_api import detect_content, get_proxy_status, set_proxy_enabled, VALID_MODES, API_KEY
@@ -66,7 +69,7 @@ ERR_INVALID_TYPE = "INVALID_TYPE"
 ERR_METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
 
 # 起動時セキュリティチェック
-def _check_admin_secret(secret):
+def _check_admin_secret(secret: str) -> list[str]:
     """ADMIN_SECRETの強度を検証し、警告メッセージのリストを返す。"""
     warnings = []
     if not secret:
@@ -92,13 +95,13 @@ for _warn in _check_admin_secret(ADMIN_SECRET):
     logger.warning(_warn)
 
 
-def _validate_api_key_format(key):
+def _validate_api_key_format(key: str | None) -> list[str]:
     """VISION_API_KEYの形式を簡易チェックし、警告メッセージのリストを返す。
 
     Google Cloud APIキーは通常39文字の英数字+ハイフン+アンダースコアで構成される。
     厳密なバリデーションではなく、明らかな設定ミス（空白混入、短すぎ等）の早期検出が目的。
     """
-    warnings = []
+    warnings: list[str] = []
     if not key:
         return warnings  # 未設定は別のチェックで検出済み
     import re
@@ -129,28 +132,28 @@ ALLOWED_IMAGE_MAGIC = {
 # ─── 管理APIブルートフォース防御 ──────────────────
 ADMIN_MAX_FAILURES = 5         # ブロックまでの連続失敗回数
 ADMIN_BLOCK_WINDOW = 300       # 失敗追跡ウィンドウ（秒）= 5分
-_admin_failures = defaultdict(list)   # {ip: [timestamp, ...]}
+_admin_failures: defaultdict[str, list[float]] = defaultdict(list)
 _admin_lock = Lock()
 
 
 # ─── メトリクス（スレッドセーフ） ──────────────────
-_metrics = defaultdict(int)
+_metrics: defaultdict[str, int] = defaultdict(int)
 _metrics_lock = Lock()
 
 
-def _record_metric(name, increment=1):
+def _record_metric(name: str, increment: int = 1) -> None:
     """メトリクスカウンターをインクリメントする（スレッドセーフ）。"""
     with _metrics_lock:
         _metrics[name] += increment
 
 
-def _reset_metrics_for_testing():
+def _reset_metrics_for_testing() -> None:
     """テスト用: メトリクスカウンターをリセットする。"""
     with _metrics_lock:
         _metrics.clear()
 
 
-def _record_admin_failure(client_ip):
+def _record_admin_failure(client_ip: str) -> None:
     """管理API認証失敗を記録する。"""
     with _admin_lock:
         now = time.time()
@@ -160,7 +163,7 @@ def _record_admin_failure(client_ip):
         _admin_failures[client_ip].append(now)
 
 
-def _is_admin_blocked(client_ip):
+def _is_admin_blocked(client_ip: str) -> bool:
     """管理APIへのアクセスがブロックされているか判定する。"""
     with _admin_lock:
         now = time.time()
@@ -193,16 +196,16 @@ app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 # 静的ファイルのハッシュキャッシュ（起動中はファイル変更時に自動更新）
-_static_hash_cache = {}
+_static_hash_cache: dict[str, tuple[float, str]] = {}
 
 
-def _static_file_hash(filename):
+def _static_file_hash(filename: str) -> str:
     """静的ファイルのMD5ハッシュ先頭8文字を返す（キャッシュバスティング用）。
 
     filename単位でキャッシュし、mtimeが変わったら上書きする。
     従来は filename:mtime をキーにしていたため更新のたびに辞書が肥大していた。
     """
-    filepath = os.path.join(app.static_folder, filename)
+    filepath = os.path.join(app.static_folder or "static", filename)
     try:
         mtime = os.path.getmtime(filepath)
         cached = _static_hash_cache.get(filename)
@@ -217,16 +220,16 @@ def _static_file_hash(filename):
 
 
 @app.context_processor
-def inject_template_globals():
+def inject_template_globals() -> dict[str, Any]:
     """テンプレートに共通変数を注入する（キャッシュバスティング関数・バージョン）。"""
     return {"static_hash": _static_file_hash, "app_version": APP_VERSION}
 
 
 # プロキシ配下でのIP取得を正しく行う（X-Forwarded-For対応）
-def _parse_proxy_hops(raw_value):
+def _parse_proxy_hops(raw_value: str | None) -> int:
     """TRUST_PROXY_HOPS の文字列を安全にパースする。不正値・0以下は 1 にフォールバック。"""
     try:
-        hops = int(raw_value)
+        hops = int(raw_value)  # type: ignore[arg-type]
     except (ValueError, TypeError):
         logger.warning("TRUST_PROXY_HOPS の値が不正です (%r)。デフォルト 1 を使用します。", raw_value)
         return 1
@@ -239,7 +242,7 @@ def _parse_proxy_hops(raw_value):
 TRUST_PROXY = os.getenv("TRUST_PROXY", "false").lower() == "true"
 TRUST_PROXY_HOPS = _parse_proxy_hops(os.getenv("TRUST_PROXY_HOPS", "1"))
 if TRUST_PROXY:
-    app.wsgi_app = ProxyFix(
+    app.wsgi_app = ProxyFix(  # type: ignore[method-assign]
         app.wsgi_app,
         x_for=TRUST_PROXY_HOPS, x_proto=TRUST_PROXY_HOPS,
         x_host=TRUST_PROXY_HOPS, x_prefix=TRUST_PROXY_HOPS,
@@ -248,7 +251,7 @@ if TRUST_PROXY:
 
 # ─── リクエストコンテキスト（request-id / CSPノンス） ──
 @app.before_request
-def set_request_context():
+def set_request_context() -> None:
     """リクエストごとに一意のIDとCSPノンスを生成する。"""
     g.request_id = secrets.token_hex(8)
     g.csp_nonce = secrets.token_urlsafe(16)
@@ -256,7 +259,7 @@ def set_request_context():
 
 # ─── セキュリティヘッダー ─────────────────────────
 @app.after_request
-def add_security_headers(response):
+def add_security_headers(response: FlaskResponse) -> FlaskResponse:
     """全レスポンスにセキュリティヘッダーを付与する。"""
     nonce = getattr(g, "csp_nonce", "")
     req_id = getattr(g, "request_id", "")
@@ -307,7 +310,9 @@ def add_security_headers(response):
 
 
 # ─── レスポンスヘルパー ────────────────────────────
-def _error_response(error_code, message, status_code=400, extra_fields=None, headers=None):
+def _error_response(error_code: str, message: str, status_code: int = 400,
+                     extra_fields: dict[str, Any] | None = None,
+                     headers: dict[str, str] | None = None) -> FlaskResponse:
     """標準化されたエラーレスポンスを生成する。
 
     Args:
@@ -356,7 +361,7 @@ def handle_method_not_allowed(_e):
     return _error_response(ERR_METHOD_NOT_ALLOWED, "許可されていないHTTPメソッドです", 405)
 
 
-def _log(level, event, **kwargs):
+def _log(level: str, event: str, **kwargs: Any) -> None:
     """構造化ログ出力（request-id自動付与、PII自動マスク）。"""
     from pii_mask import mask_pii
     req_id = getattr(g, "request_id", "-")
@@ -370,7 +375,7 @@ def _log(level, event, **kwargs):
 
 
 # ─── 画像フォーマット検証 ──────────────────────────
-def _validate_image_format(decoded_bytes):
+def _validate_image_format(decoded_bytes: bytes) -> bool:
     """
     デコード済みバイト列のマジックバイトを検査し、許可されたフォーマットか判定する。
 
@@ -431,7 +436,7 @@ def readyz():
 
     all_ok = bool(API_KEY) and not redis_fallback and checks.get("api_reachable", True)
 
-    response_data = {
+    response_data: dict[str, Any] = {
         "status": "ok" if all_ok else "not_ready",
         "checks": checks,
     }
@@ -538,7 +543,7 @@ def update_proxy_config():
     return jsonify({"ok": True, "status": new_status})
 
 
-def _validate_analyze_request():
+def _validate_analyze_request() -> tuple[str | None, str | None, bool | None, FlaskResponse | None]:
     """
     /api/analyze のリクエストを検証し、画像データ・モード・Dry Runフラグを返す。
 
@@ -659,7 +664,7 @@ _DRY_RUN_RESPONSES = {
 }
 
 
-def _generate_dry_run_response(mode):
+def _generate_dry_run_response(mode: str) -> dict[str, Any]:
     """Dry Runモード用のダミーレスポンスを返す。"""
     return _DRY_RUN_RESPONSES.get(mode, _DRY_RUN_RESPONSES["text"])
 
@@ -694,6 +699,8 @@ def analyze_endpoint():
     image_data, mode, dry_run, validation_error = _validate_analyze_request()
     if validation_error:
         return validation_error
+    # バリデーション通過後は全て非None（mypy型絞り込み用）
+    assert image_data is not None and mode is not None and dry_run is not None
 
     client_ip = request.remote_addr or "unknown"
 
@@ -707,7 +714,7 @@ def analyze_endpoint():
     # ─── レート制限チェック＆予約（原子的） ──
     _record_metric(f"mode__{mode}")
 
-    limited, limit_message, request_id, limit_type = try_consume_request(client_ip)
+    limited, limit_message, req_id, limit_type = try_consume_request(client_ip)
     if limited:
         _record_metric("rate_limited_total")
         _log("info", "rate_limited", ip=client_ip, reason=limit_message, limit_type=limit_type)
@@ -722,6 +729,9 @@ def analyze_endpoint():
             headers={"Retry-After": str(retry_after)},
         )
 
+    # 制限なしの場合、req_idは必ず非None（mypy型絞り込み用）
+    assert req_id is not None
+
     # ─── Vision API呼び出し ─────────────
     try:
         result = detect_content(image_data, mode, request_id=g.request_id)
@@ -731,20 +741,20 @@ def analyze_endpoint():
             _log("info", "api_success", ip=client_ip, mode=mode, items=len(result["data"]))
         else:
             _record_metric("api_requests_total__api_error")
-            release_request(client_ip, request_id)
+            release_request(client_ip, req_id)
             _log("warning", "api_failure", ip=client_ip, mode=mode, error_code=result["error_code"])
 
         status_code = 200 if result["ok"] else 502
         return jsonify(result), status_code
 
     except ValueError as e:
-        release_request(client_ip, request_id)
+        release_request(client_ip, req_id)
         _log("warning", "validation_error", ip=client_ip, mode=mode, error=str(e))
         return _error_response(ERR_VALIDATION_ERROR, str(e))
 
     except Exception as e:
         _record_metric("api_requests_total__server_error")
-        release_request(client_ip, request_id)
+        release_request(client_ip, req_id)
         _log("error", "server_error", ip=client_ip, mode=mode, error=str(e))
         return _error_response(ERR_SERVER_ERROR, "内部サーバーエラーが発生しました", 500)
 

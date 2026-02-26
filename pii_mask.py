@@ -29,7 +29,7 @@ _CARD_PATTERN = re.compile(
 _MYNUMBER_PATTERN = re.compile(r'\b(\d{12})\b')
 
 
-def mask_pii(text):
+def mask_pii(text: str) -> str:
     """テキスト中のPII情報をマスクする。
 
     対象:

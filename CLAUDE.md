@@ -44,6 +44,9 @@ pytest tests/e2e/ -v
 # リンター
 ruff check .
 
+# 型チェック（mypy）
+mypy app.py vision_api.py rate_limiter.py pii_mask.py translations.py _types.py
+
 # セキュリティスキャン
 bandit -r . --exclude ./tests,./venv,./.venv -q
 

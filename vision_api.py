@@ -3,11 +3,14 @@ Vision API モジュール。
 Google Cloud Vision APIを使用してテキスト抽出（OCR）と物体検出を行う。
 """
 
+from __future__ import annotations
+
 import os
 import io
 import base64
 import logging
 from threading import Lock
+from typing import Any
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -16,6 +19,22 @@ import urllib3
 from dotenv import load_dotenv
 from PIL import Image, ImageEnhance
 
+from _types import (
+    BoundingBox,
+    ClassifyDataItem,
+    DataItem,
+    FaceDataItem,
+    ProxyStatus,
+    TextDataItem,
+    TranslationDict,
+    VisionErrorResponse,
+    VisionResponse,
+    VisionSuccessResponse,
+    WebDataItem,
+    WebDetail,
+    WebEntity,
+    WebPage,
+)
 from translations import (
     OBJECT_TRANSLATIONS,
     EMOTION_LIKELIHOOD,
@@ -37,14 +56,14 @@ NO_PROXY_MODE = os.getenv("NO_PROXY_MODE", "false").lower() == "true"
 _RAW_PROXY_URL = os.getenv("PROXY_URL", "")
 
 
-def _get_active_proxy_config():
+def _get_active_proxy_config() -> dict[str, str]:
     """現在の設定に基づいてプロキシ辞書を生成する"""
     if NO_PROXY_MODE or not _RAW_PROXY_URL:
         return {}
     return {"http": _RAW_PROXY_URL, "https": _RAW_PROXY_URL}
 
 
-def _mask_proxy_url(url):
+def _mask_proxy_url(url: str | None) -> str | None:
     """プロキシURLの認証情報をマスクする（例: http://user:pass@host → http://***:***@host）"""
     if not url or "@" not in url:
         return url
@@ -96,13 +115,13 @@ JPEG_QUALITY = 95              # JPEG保存品質
 
 
 # ─── 共通ユーティリティ ────────────────────────────
-def _extract_bounds(poly_dict, coord_key="vertices"):
+def _extract_bounds(poly_dict: dict[str, Any], coord_key: str = "vertices") -> BoundingBox:
     """boundingPolyの頂点座標を [[x, y], ...] 形式で抽出する。"""
     vertices = poly_dict.get(coord_key, [])
     return [[v.get("x", 0), v.get("y", 0)] for v in vertices] if vertices else []
 
 
-def _build_label_with_translation(en_name, score, translation_dict):
+def _build_label_with_translation(en_name: str, score: float, translation_dict: TranslationDict) -> str:
     """英語名・スコア・翻訳辞書からラベル文字列を生成する。"""
     ja_name = translation_dict.get(en_name.lower(), "")
     if ja_name:
@@ -111,16 +130,16 @@ def _build_label_with_translation(en_name, score, translation_dict):
 
 
 # ─── レスポンスビルダー（辞書構築の一元化） ───────────────
-def _make_success(data, image_size=None, warnings=None, **extra):
+def _make_success(data: list[DataItem], image_size: list[int] | None = None, warnings: list[str] | None = None, **extra: Any) -> VisionSuccessResponse:
     """成功レスポンス辞書を生成する。warningsがあれば部分成功として併記。"""
     result = {"ok": True, "data": data, "image_size": image_size,
               "error_code": None, "message": None, **extra}
     if warnings:
         result["warnings"] = warnings
-    return result
+    return result  # type: ignore[return-value]
 
 
-def _make_error(error_code, message):
+def _make_error(error_code: str, message: str) -> VisionErrorResponse:
     """失敗レスポンス辞書を生成する。"""
     return {"ok": False, "data": [], "image_size": None,
             "error_code": error_code, "message": message}
@@ -158,15 +177,15 @@ if session.proxies:
 _proxy_lock = Lock()
 
 
-def get_proxy_status():
+def get_proxy_status() -> ProxyStatus:
     """現在のプロキシ設定状態を返す（認証情報はマスク）"""
     return {
         "enabled": not NO_PROXY_MODE and bool(_RAW_PROXY_URL),
-        "url": _mask_proxy_url(_RAW_PROXY_URL) if not NO_PROXY_MODE else "",
+        "url": (_mask_proxy_url(_RAW_PROXY_URL) or "") if not NO_PROXY_MODE else "",
     }
 
 
-def set_proxy_enabled(enabled: bool):
+def set_proxy_enabled(enabled: bool) -> ProxyStatus:
     """
     プロキシの有効/無効を切り替える（スレッド安全）。
     変更はロックで保護され、グローバル状態とセッション設定を原子的に更新する。
@@ -187,7 +206,7 @@ session.verify = VERIFY_SSL
 
 
 # ─── 画像寸法取得 ─────────────────────────────────
-def _get_image_dimensions(image_b64):
+def _get_image_dimensions(image_b64: str) -> list[int] | None:
     """
     Base64画像のピクセル寸法を取得する（デコードのみ、画像加工なし）。
     顔検出・ロゴ検出モードでバウンディングボックスの座標正規化に使用。
@@ -207,7 +226,7 @@ def _get_image_dimensions(image_b64):
 
 
 # ─── 画像前処理 ──────────────────────────────────
-def preprocess_image(image_base64):
+def preprocess_image(image_base64: str) -> str:
     """
     OCR精度向上のため画像の前処理を行う。
     コントラストとシャープネスを軽く強調する。
@@ -226,11 +245,11 @@ def preprocess_image(image_base64):
 
         # RGBA/CMYK等のモードをRGBに変換（JPEG保存に必要）
         if img.mode not in ("RGB", "L"):
-            img = img.convert("RGB")
+            img = img.convert("RGB")  # type: ignore[assignment]
 
         # コントラスト・シャープネスを強調（OCR精度向上）
-        img = ImageEnhance.Contrast(img).enhance(CONTRAST_FACTOR)
-        img = ImageEnhance.Sharpness(img).enhance(SHARPNESS_FACTOR)
+        img = ImageEnhance.Contrast(img).enhance(CONTRAST_FACTOR)  # type: ignore[assignment]
+        img = ImageEnhance.Sharpness(img).enhance(SHARPNESS_FACTOR)  # type: ignore[assignment]
 
         # JPEG形式で高画質保存
         buffer = io.BytesIO()
@@ -239,7 +258,7 @@ def preprocess_image(image_base64):
 
 
 # ─── ペイロード構築 ─────────────────────────────────
-def _build_request_payload(image_b64, mode, features):
+def _build_request_payload(image_b64: str, mode: str, features: list[dict[str, Any]]) -> dict[str, Any]:
     """APIリクエストのペイロードを組み立てる。"""
     request_item = {
         "image": {"content": image_b64},
@@ -252,7 +271,7 @@ def _build_request_payload(image_b64, mode, features):
 
 
 # ─── API通信 ──────────────────────────────────────
-def _call_vision_api(payload, request_id, mode):
+def _call_vision_api(payload: dict[str, Any], request_id: str, mode: str) -> VisionResponse | dict[str, Any]:
     """
     Vision API を呼び出し、responses[0] の辞書を返す。
     通信エラー・HTTPエラー・パースエラー時は _make_error 辞書を返す。
@@ -289,11 +308,11 @@ def _call_vision_api(payload, request_id, mode):
     if not responses:
         return _make_success([])
 
-    return responses[0]
+    return responses[0]  # type: ignore[no-any-return]
 
 
 # ─── 部分エラー判定 ─────────────────────────────────
-def _check_partial_error(response_item, request_id, mode):
+def _check_partial_error(response_item: dict[str, Any], request_id: str, mode: str) -> tuple[list[str] | None, str | None, str | None]:
     """
     responses[0].error を検査し、部分エラー情報を返す。
 
@@ -310,60 +329,60 @@ def _check_partial_error(response_item, request_id, mode):
     return [f"VISION_{code}: {msg}"], f"VISION_{code}", msg
 
 
-def _partial_error_or_success(data, partial_warnings, error_code, error_msg,
-                              image_size=None, **extra):
+def _partial_error_or_success(data: list[DataItem], partial_warnings: list[str] | None, error_code: str | None, error_msg: str | None,
+                              image_size: list[int] | None = None, **extra: Any) -> VisionResponse:
     """部分エラーあり + 注釈データなし → 完全失敗、それ以外は成功を返す。"""
     if partial_warnings and not data:
-        return _make_error(error_code, error_msg)
+        return _make_error(error_code or "", error_msg or "")
     return _make_success(data, image_size, warnings=partial_warnings, **extra)
 
 
 # ─── モード別パース分岐 ──────────────────────────────
-def _dispatch_parse(mode, response_item, image_b64):
+def _dispatch_parse(mode: str, response_item: dict[str, Any], image_b64: str) -> tuple[list[DataItem], list[int] | None, dict[str, Any]]:
     """
     モードに応じてレスポンスをパースし、(data, image_size, extra_kwargs) を返す。
     extra_kwargs はモード固有フィールド（label_detected, web_detail等）。
     """
     if mode == "text":
-        data, image_size = _parse_text_response(response_item)
-        logger.info("テキスト検出結果: %d件, image_size=%s", len(data), image_size)
-        return data, image_size, {}
+        text_data, image_size = _parse_text_response(response_item)
+        logger.info("テキスト検出結果: %d件, image_size=%s", len(text_data), image_size)
+        return text_data, image_size, {}  # type: ignore[return-value]
 
     if mode == "label":
-        data, image_size, label_detected, label_reason = _parse_label_response(response_item)
+        label_data, image_size, label_detected, label_reason = _parse_label_response(response_item)
         logger.info("ラベル検出結果: detected=%s, reason=%s", label_detected, label_reason)
-        return data, image_size, {"label_detected": label_detected, "label_reason": label_reason}
+        return label_data, image_size, {"label_detected": label_detected, "label_reason": label_reason}  # type: ignore[return-value]
 
     if mode == "face":
         image_size = _get_image_dimensions(image_b64)
-        data = _parse_face_response(response_item)
-        logger.info("顔検出結果: %d件, image_size=%s", len(data), image_size)
-        return data, image_size, {}
+        face_data = _parse_face_response(response_item)
+        logger.info("顔検出結果: %d件, image_size=%s", len(face_data), image_size)
+        return face_data, image_size, {}  # type: ignore[return-value]
 
     if mode == "logo":
         image_size = _get_image_dimensions(image_b64)
-        data = _parse_logo_response(response_item)
-        logger.info("ロゴ検出結果: %d件, image_size=%s", len(data), image_size)
-        return data, image_size, {}
+        logo_data = _parse_logo_response(response_item)
+        logger.info("ロゴ検出結果: %d件, image_size=%s", len(logo_data), image_size)
+        return logo_data, image_size, {}  # type: ignore[return-value]
 
     if mode == "classify":
-        data = _parse_classify_response(response_item)
-        logger.info("分類タグ結果: %d件", len(data))
-        return data, None, {}
+        classify_data = _parse_classify_response(response_item)
+        logger.info("分類タグ結果: %d件", len(classify_data))
+        return classify_data, None, {}  # type: ignore[return-value]
 
     if mode == "web":
-        data, web_detail = _parse_web_response(response_item)
+        web_data, web_detail = _parse_web_response(response_item)
         logger.info("Web検索結果: entities=%d件", len(web_detail.get("entities", [])))
-        return data, None, {"web_detail": web_detail}
+        return web_data, None, {"web_detail": web_detail}
 
     # object モード
-    data = _parse_object_response(response_item)
-    logger.info("物体検出結果: %d件", len(data))
-    return data, None, {}
+    obj_data = _parse_object_response(response_item)
+    logger.info("物体検出結果: %d件", len(obj_data))
+    return obj_data, None, {}  # type: ignore[return-value]
 
 
 # ─── API呼び出し（公開エントリーポイント） ───────────────
-def detect_content(image_b64, mode="text", request_id=""):
+def detect_content(image_b64: str, mode: str = "text", request_id: str = "") -> VisionResponse:
     """
     Google Cloud Vision APIで画像解析を行う。
 
@@ -409,7 +428,7 @@ def detect_content(image_b64, mode="text", request_id=""):
 
     # _call_vision_api がエラー辞書や空成功を返した場合はそのまま返却
     if isinstance(api_result, dict) and "ok" in api_result:
-        return api_result
+        return api_result  # type: ignore[return-value]
 
     # パース分岐 + 部分エラー判定
     response_item = api_result
@@ -420,7 +439,7 @@ def detect_content(image_b64, mode="text", request_id=""):
 
 
 # ─── レスポンス解析（内部関数） ──────────────────────
-def _parse_text_response(response_data):
+def _parse_text_response(response_data: dict[str, Any]) -> tuple[list[TextDataItem], list[int] | None]:
     """
     テキスト検出レスポンスを解析する。
     各テキストブロックのラベルとバウンディングボックス座標を返す。
@@ -459,7 +478,7 @@ def _parse_text_response(response_data):
                 image_size = [max_x, max_y]
 
     # textAnnotations[1:] が個別の単語/ブロック（座標付き）
-    results = []
+    results: list[TextDataItem] = []
     for annotation in text_annotations[1:]:
         text = annotation.get("description", "").strip()
         if not text:
@@ -470,7 +489,7 @@ def _parse_text_response(response_data):
     return results, image_size
 
 
-def _parse_label_response(response_data):
+def _parse_label_response(response_data: dict[str, Any]) -> tuple[list[TextDataItem], list[int] | None, bool, str]:
     """
     ラベル検出レスポンスを解析する。
     テキスト検出と物体検出の両方の結果を組み合わせて、ラベルの有無を判定する。
@@ -487,8 +506,8 @@ def _parse_label_response(response_data):
             label_detected: bool ラベルが検出されたか
             label_reason: str 判定理由の説明
     """
-    reasons = []
-    all_data = []
+    reasons: list[str] = []
+    all_data: list[TextDataItem] = []
 
     # テキスト検出の結果を確認
     text_annotations = response_data.get("textAnnotations", [])
@@ -528,7 +547,7 @@ def _parse_label_response(response_data):
     return all_data, image_size, label_detected, label_reason
 
 
-def _parse_object_response(response_data):
+def _parse_object_response(response_data: dict[str, Any]) -> list[TextDataItem]:
     """
     物体検出（OBJECT_LOCALIZATION）レスポンスを解析する。
     各物体のラベルと正規化バウンディングボックス座標（0〜1）を返す。
@@ -537,7 +556,7 @@ def _parse_object_response(response_data):
         list: [{"label": str, "bounds": [[x,y], ...]}, ...]
     """
     objects = response_data.get("localizedObjectAnnotations", [])
-    results = []
+    results: list[TextDataItem] = []
     for obj in objects:
         en_name = obj.get("name", "")
         score = obj.get("score", 0)
@@ -551,7 +570,7 @@ def _parse_object_response(response_data):
     return results
 
 
-def _parse_face_response(response_data):
+def _parse_face_response(response_data: dict[str, Any]) -> list[FaceDataItem]:
     """
     顔検出（FACE_DETECTION）レスポンスを解析する。
     各顔のバウンディングボックスと感情分析結果を返す。
@@ -565,7 +584,7 @@ def _parse_face_response(response_data):
         }, ...]
     """
     annotations = response_data.get("faceAnnotations", [])
-    results = []
+    results: list[FaceDataItem] = []
     for idx, face in enumerate(annotations, 1):
         confidence = face.get("detectionConfidence", 0)
 
@@ -604,7 +623,7 @@ def _parse_face_response(response_data):
     return results
 
 
-def _parse_logo_response(response_data):
+def _parse_logo_response(response_data: dict[str, Any]) -> list[TextDataItem]:
     """
     ロゴ検出（LOGO_DETECTION）レスポンスを解析する。
     各ロゴのブランド名、スコア、バウンディングボックスを返す。
@@ -613,7 +632,7 @@ def _parse_logo_response(response_data):
         list: [{"label": str, "bounds": [[x,y], ...]}, ...]
     """
     annotations = response_data.get("logoAnnotations", [])
-    results = []
+    results: list[TextDataItem] = []
     for logo in annotations:
         name = logo.get("description", "不明")
         score = logo.get("score", 0)
@@ -626,7 +645,7 @@ def _parse_logo_response(response_data):
     return results
 
 
-def _parse_classify_response(response_data):
+def _parse_classify_response(response_data: dict[str, Any]) -> list[ClassifyDataItem]:
     """
     分類タグ（LABEL_DETECTION）レスポンスを解析する。
     画像全体に対する分類ラベルとスコアを返す（座標なし）。
@@ -635,7 +654,7 @@ def _parse_classify_response(response_data):
         list: [{"label": str, "score": float}, ...]
     """
     annotations = response_data.get("labelAnnotations", [])
-    results = []
+    results: list[ClassifyDataItem] = []
     for item in annotations:
         en_name = item.get("description", "")
         score = item.get("score", 0)
@@ -645,7 +664,7 @@ def _parse_classify_response(response_data):
     return results
 
 
-def _parse_web_response(response_data):
+def _parse_web_response(response_data: dict[str, Any]) -> tuple[list[WebDataItem], WebDetail]:
     """
     Web類似検索（WEB_DETECTION）レスポンスを解析する。
     エンティティ情報、関連ページ、類似画像URLを返す。
@@ -662,14 +681,14 @@ def _parse_web_response(response_data):
     best_guess = best_guess_labels[0].get("label", "") if best_guess_labels else None
 
     # Webエンティティ（上位5件）
-    entities = []
+    entities: list[WebEntity] = []
     for entity in web.get("webEntities", [])[:5]:
         name = entity.get("description", "")
         if name:
             entities.append({"name": name, "score": entity.get("score", 0)})
 
     # 関連ページ（上位5件）
-    pages = []
+    pages: list[WebPage] = []
     for page_info in web.get("pagesWithMatchingImages", [])[:5]:
         pages.append({
             "url": page_info.get("url", ""),
@@ -677,20 +696,20 @@ def _parse_web_response(response_data):
         })
 
     # 類似画像URL（上位3件）
-    similar_images = [
+    similar_images: list[str] = [
         img.get("url", "")
         for img in web.get("visuallySimilarImages", [])[:3]
         if img.get("url")
     ]
 
     # 統一data形式（ラベルのみ、boundsなし）
-    data = []
+    data: list[WebDataItem] = []
     if best_guess:
         data.append({"label": f"推定: {best_guess}"})
-    for entity in entities:
-        data.append({"label": f"{entity['name']} ({entity['score']:.0%})"})
+    for ent in entities:
+        data.append({"label": f"{ent['name']} ({ent['score']:.0%})"})
 
-    web_detail = {
+    web_detail: WebDetail = {
         "best_guess": best_guess,
         "entities": entities,
         "pages": pages,

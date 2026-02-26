@@ -9,3 +9,32 @@ markers = [
 
 [tool.ruff]
 exclude = ["tests/e2e/*"]
+
+# ─── mypy 静的型チェック設定 ─────────────────────
+[tool.mypy]
+python_version = "3.11"
+# 基本的な型安全チェック
+warn_return_any = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+warn_unreachable = true
+# 段階的導入: 型ヒント未定義の関数は許容
+disallow_untyped_defs = false
+
+# サードパーティライブラリのスタブ設定（スタブが提供されていないもの）
+[[tool.mypy.overrides]]
+module = [
+    "cachetools.*",
+    "PIL.*",
+    "dotenv.*",
+    "gunicorn.*",
+]
+ignore_missing_imports = true
+
+# テストコードは緩めに
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false

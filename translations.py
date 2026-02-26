@@ -3,7 +3,9 @@
 Google Cloud Vision APIの各種検出結果を日本語で表示するために使用。
 """
 
-OBJECT_TRANSLATIONS = {
+from _types import TranslationDict
+
+OBJECT_TRANSLATIONS: TranslationDict = {
     # 人物・身体
     "person": "人", "face": "顔", "head": "頭", "hand": "手",
     "finger": "指", "hair": "髪", "eye": "目", "smile": "笑顔",
@@ -73,7 +75,7 @@ OBJECT_TRANSLATIONS = {
 }
 
 # ─── 顔検出: 感情の尤度ラベル翻訳 ───────────────────
-EMOTION_LIKELIHOOD = {
+EMOTION_LIKELIHOOD: TranslationDict = {
     "VERY_UNLIKELY": "非常に低い",
     "UNLIKELY": "低い",
     "POSSIBLE": "あり得る",
@@ -82,7 +84,7 @@ EMOTION_LIKELIHOOD = {
 }
 
 # ─── 顔検出: 感情名の翻訳 ────────────────────────────
-EMOTION_NAMES = {
+EMOTION_NAMES: TranslationDict = {
     "joy": "喜び",
     "sorrow": "悲しみ",
     "anger": "怒り",
@@ -91,7 +93,7 @@ EMOTION_NAMES = {
 
 # ─── 分類タグ（LABEL_DETECTION）用の翻訳辞書 ───────────
 # OBJECT_TRANSLATIONS を基盤に、LABEL_DETECTION 固有のラベルを追加
-LABEL_TRANSLATIONS = {
+LABEL_TRANSLATIONS: TranslationDict = {
     **OBJECT_TRANSLATIONS,
     "electronics": "電子機器", "gadget": "ガジェット",
     "font": "フォント", "brand": "ブランド", "product": "製品",

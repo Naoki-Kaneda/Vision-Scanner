@@ -3,11 +3,16 @@
 Redis（マルチプロセス対応）またはインメモリ（シングルプロセス用フォールバック）を自動選択する。
 """
 
+from __future__ import annotations
+
 import os
 import time
 import uuid
 import logging
 from threading import Lock
+from typing import Any
+
+from _types import ConsumeResult
 
 from dotenv import load_dotenv
 
@@ -22,7 +27,7 @@ RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "20"))
 RATE_LIMIT_DAILY = int(os.getenv("RATE_LIMIT_DAILY", "1000"))
 
 
-def seconds_until_midnight():
+def seconds_until_midnight() -> int:
     """翌日0時までの残り秒数を返す（日付境界リセット用）。"""
     import datetime
     now = datetime.datetime.now()
@@ -82,10 +87,10 @@ class RedisRateLimiter:
     return removed
     """
 
-    def __init__(self, client):
+    def __init__(self, client: Any) -> None:
         self._client = client
 
-    def try_consume(self, client_ip):
+    def try_consume(self, client_ip: str) -> ConsumeResult:
         """
         制限チェック＆予約を原子的に実行する。
 
@@ -119,14 +124,14 @@ class RedisRateLimiter:
         returned_id = result[1] if isinstance(result[1], str) else result[1].decode()
         return False, "", returned_id, None
 
-    def release(self, client_ip, request_id):
+    def release(self, client_ip: str, request_id: str) -> None:
         """失敗時に指定IDの予約のみを取り消す。"""
         today = time.strftime("%Y-%m-%d")
         minute_key = f"rate:minute:{client_ip}"
         daily_key = f"rate:daily:{client_ip}:{today}"
         self._client.eval(self._LUA_RELEASE, 2, minute_key, daily_key, request_id)
 
-    def get_daily_count(self, client_ip):
+    def get_daily_count(self, client_ip: str) -> int:
         """日次カウントを取得する（テスト・監視用）。"""
         today = time.strftime("%Y-%m-%d")
         daily_key = f"rate:daily:{client_ip}:{today}"
@@ -138,18 +143,18 @@ class RedisRateLimiter:
 class InMemoryRateLimiter:
     """インメモリレート制限（シングルプロセス用フォールバック）。"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         try:
             from cachetools import TTLCache
         except ImportError:
             raise ImportError(
                 "cachetools がインストールされていません。pip install -r requirements.txt を実行してください。"
             )
-        self._rate_store = TTLCache(maxsize=10_000, ttl=90)
-        self._daily_store = TTLCache(maxsize=10_000, ttl=86400)
+        self._rate_store: Any = TTLCache(maxsize=10_000, ttl=90)
+        self._daily_store: Any = TTLCache(maxsize=10_000, ttl=86400)
         self._lock = Lock()
 
-    def try_consume(self, client_ip):
+    def try_consume(self, client_ip: str) -> ConsumeResult:
         """
         制限チェック＆予約を原子的に実行する。
 
@@ -180,7 +185,7 @@ class InMemoryRateLimiter:
 
         return False, "", request_id, None
 
-    def release(self, client_ip, request_id):
+    def release(self, client_ip: str, request_id: str) -> None:
         """失敗時に指定IDの予約のみを取り消す。"""
         now = time.time()
         today = time.strftime("%Y-%m-%d")
@@ -203,20 +208,20 @@ class InMemoryRateLimiter:
                     daily["count"] -= 1
                     self._daily_store[client_ip] = daily
 
-    def get_daily_count(self, client_ip):
+    def get_daily_count(self, client_ip: str) -> int:
         """日次カウントを取得する（テスト・監視用）。"""
         today = time.strftime("%Y-%m-%d")
         daily = self._daily_store.get(client_ip, {"date": "", "count": 0})
         if daily.get("date") != today:
             return 0
-        return daily["count"]
+        return int(daily["count"])
 
 
 # ─── バックエンド選択・公開API ─────────────────────
-_backend = None
+_backend: RedisRateLimiter | InMemoryRateLimiter | None = None
 
 
-def _get_backend():
+def _get_backend() -> RedisRateLimiter | InMemoryRateLimiter:
     """設定に基づいてバックエンドを初期化・取得する（遅延初期化）。"""
     global _backend
     if _backend is not None:
@@ -240,22 +245,22 @@ def _get_backend():
     return _backend
 
 
-def try_consume_request(client_ip):
+def try_consume_request(client_ip: str) -> ConsumeResult:
     """レート制限チェック＆予約。"""
     return _get_backend().try_consume(client_ip)
 
 
-def release_request(client_ip, request_id):
+def release_request(client_ip: str, request_id: str) -> None:
     """失敗時に指定IDの予約を取り消す。"""
     return _get_backend().release(client_ip, request_id)
 
 
-def get_daily_count(client_ip):
+def get_daily_count(client_ip: str) -> int:
     """日次カウントを取得する。"""
     return _get_backend().get_daily_count(client_ip)
 
 
-def get_backend_type():
+def get_backend_type() -> str:
     """現在のレート制限バックエンド種別を返す（監視・readyz用）。"""
     backend = _get_backend()
     if isinstance(backend, RedisRateLimiter):
@@ -263,7 +268,7 @@ def get_backend_type():
     return "in_memory"
 
 
-def reset_for_testing():
+def reset_for_testing() -> InMemoryRateLimiter:
     """テスト用: バックエンドをインメモリにリセットする。"""
     global _backend
     _backend = InMemoryRateLimiter()
