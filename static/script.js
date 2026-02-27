@@ -461,9 +461,10 @@ async function requestWakeLock() {
  */
 async function releaseWakeLock() {
     if (!wakeLock) return;
+    const lock = wakeLock;
+    wakeLock = null; // 先にクリアして無効なSentinel参照を防ぐ
     try {
-        await wakeLock.release();
-        wakeLock = null;
+        await lock.release();
         console.log('Screen Wake Lock released.');
     } catch (err) {
         console.error(`Screen Wake Lock release failed: ${err.name} (${err.message})`);
@@ -931,7 +932,7 @@ function toggleScanning() {
 function startScanning() {
     if (!transitionTo(ScanState.SCANNING)) return;
 
-    requestWakeLock(); // スリープ防止を開始
+    void requestWakeLock(); // スリープ防止を開始（失敗してもスキャンには影響しない）
 
     consecutiveErrorCount = 0;
     lastSentImageHash = null;
@@ -952,7 +953,7 @@ function startScanning() {
 
 /** スキャンを停止してUIをリセットする。 */
 function stopScanning() {
-    releaseWakeLock(); // スリープ防止を解放
+    void releaseWakeLock(); // スリープ防止を解放（失敗してもスキャン停止には影響しない）
 
     // 全タイマーをクリア
     if (scanRafId) { cancelAnimationFrame(scanRafId); scanRafId = null; }
@@ -1852,9 +1853,9 @@ function restoreWakeLockSetting() {
     // スキャン中なら状態を即時反映
     if (scanState !== ScanState.IDLE && scanState !== ScanState.ANALYZING) {
         if (isWakeLockEnabled) {
-            requestWakeLock();
+            void requestWakeLock();
         } else {
-            releaseWakeLock();
+            void releaseWakeLock();
         }
     }
 }
@@ -2012,23 +2013,27 @@ async function init() {
             isWakeLockEnabled = e.target.checked;
             localStorage.setItem('visionWakeLock', isWakeLockEnabled ? '1' : '0');
             // 設定変更を即時反映
-            if (isWakeLockEnabled && scanState !== ScanState.IDLE) {
-                requestWakeLock();
+            if (isWakeLockEnabled) {
+                // 有効にした場合: スキャン中のみロック取得
+                if (scanState !== ScanState.IDLE && scanState !== ScanState.ANALYZING) {
+                    void requestWakeLock();
+                }
             } else {
-                releaseWakeLock();
+                // 無効にした場合: 常に解放
+                void releaseWakeLock();
             }
         });
     }
 
-    // 画面の表示/非表示でスリープ防止を制御
+    // 画面離脱時にカメラ・Wake Lockを解放（LED点灯残り防止+スリープ防止制御）
     document.addEventListener('visibilitychange', () => {
-        // 非表示になったらスリープ防止を解放
         if (document.hidden) {
-            releaseWakeLock();
+            void releaseWakeLock();
+            stopCameraStream(); // カメラLED点灯残りを防ぐため必ず停止
         } else {
-            // 再表示されたとき、スキャン中ならスリープ防止を再要求
+            // 再表示時: スキャン中ならWake Lockを再取得
             if (scanState !== ScanState.IDLE && scanState !== ScanState.ANALYZING) {
-                requestWakeLock();
+                void requestWakeLock();
             }
         }
     });
