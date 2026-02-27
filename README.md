@@ -100,6 +100,40 @@ nohup ./start.sh > app.log 2>&1 &
 | サーバー停止 | `kill $(lsof -ti :5001)` |
 | 起動確認 | `ss -tlnp \| grep 5001` |
 
+#### コードの更新（最新版への反映）
+
+GitHubに新しい変更がpushされたら、以下の手順でサーバーに反映できます。
+
+**systemdサービスで運用している場合:**
+
+```bash
+cd Vision-Scanner
+source venv/bin/activate
+git pull origin main
+pip install -r requirements.txt   # 依存ライブラリの更新（必要な場合のみ）
+sudo systemctl restart vision-scanner
+```
+
+> サービス名は `sudo systemctl list-units --type=service | grep vision` で確認できます。
+
+**手動起動（nohup）で運用している場合:**
+
+```bash
+cd Vision-Scanner
+source venv/bin/activate
+kill $(lsof -ti :5001)            # 稼働中のサーバーを停止（ポート番号は環境に合わせて変更）
+git pull origin main
+pip install -r requirements.txt
+nohup ./start.sh > app.log 2>&1 &
+```
+
+起動確認:
+
+```bash
+ss -tlnp | grep 5001              # ポート番号は環境に合わせて変更
+tail -5 app.log
+```
+
 #### LAN内の他のPCからカメラを使う場合（HTTPS）
 
 ブラウザのカメラ機能は、セキュリティ上 **HTTPS接続** でないと動作しません。
