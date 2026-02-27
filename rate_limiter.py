@@ -62,6 +62,7 @@ class RedisRateLimiter:
     end
 
     redis.call('ZADD', minute_key, now, request_id)
+    -- TTL 90秒 > ウィンドウ60秒: Redis TTL失効とZREMRANGEBYSCORE清掃の競合を防ぐ安全マージン
     redis.call('EXPIRE', minute_key, 90)
     redis.call('INCR', daily_key)
     if redis.call('TTL', daily_key) < 0 then
@@ -150,6 +151,7 @@ class InMemoryRateLimiter:
             raise ImportError(
                 "cachetools がインストールされていません。pip install -r requirements.txt を実行してください。"
             )
+        # TTL 90秒 > ウィンドウ60秒: エントリ清掃タイミングとの競合を防ぐ安全マージン
         self._rate_store: Any = TTLCache(maxsize=10_000, ttl=90)
         self._daily_store: Any = TTLCache(maxsize=10_000, ttl=86400)
         self._lock = Lock()
@@ -238,7 +240,12 @@ def _get_backend() -> RedisRateLimiter | InMemoryRateLimiter:
             logger.info("レート制限: Redis バックエンド (%s)", safe_url)
             return _backend
         except Exception as e:
-            logger.warning("Redis接続失敗、インメモリにフォールバック: %s", e)
+            # エラーメッセージにRedis URLの認証情報が含まれる可能性があるため安全にマスク
+            safe_err = str(e)
+            if "@" in REDIS_URL:
+                cred_part = REDIS_URL.split("@")[0]  # "redis://user:pass" 部分
+                safe_err = safe_err.replace(cred_part, "redis://***")
+            logger.warning("Redis接続失敗、インメモリにフォールバック: %s", safe_err)
 
     _backend = InMemoryRateLimiter()
     logger.info("レート制限: インメモリバックエンド（シングルプロセスのみ）")
