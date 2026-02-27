@@ -225,6 +225,8 @@ let stabilityCounter = 0;
 let scanRafId = null;                // cancelAnimationFrame用ID
 let analyzeAbortController = null;   // 解析fetch中断用AbortController
 let isDryRun = false;                // Dry Runモード（APIキー消費なしテスト）
+let isWakeLockEnabled = true;        // 画面スリープ防止が有効か
+let wakeLock = null;                 // Screen Wake Lock APIのSentinelオブジェクト
 
 // 差分検出用キャンバス（毎フレーム生成せず再利用）
 const motionCanvas = document.createElement('canvas');
@@ -424,6 +426,47 @@ function stopCooldownCountdown() {
     if (shouldRestartAfterCooldown) {
         shouldRestartAfterCooldown = false;
         startScanning();
+    }
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 画面スリープ防止 (Screen Wake Lock)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/**
+ * 互換性があれば画面スリープ防止を要求する。
+ * isWakeLockEnabled が false の場合、またはAPIが未サポートの場合は何もしない。
+ */
+async function requestWakeLock() {
+    if (!isWakeLockEnabled || !('wakeLock' in navigator)) return;
+    // 既にロック取得済みか、ドキュメントが非表示の場合は何もしない
+    if (wakeLock || document.hidden) return;
+
+    try {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => {
+            // OS等によってロックが解放された場合
+            wakeLock = null;
+            console.log('Screen Wake Lock was released by the OS.');
+        });
+        console.log('Screen Wake Lock acquired.');
+    } catch (err) {
+        console.error(`Screen Wake Lock failed: ${err.name} (${err.message})`);
+    }
+}
+
+/**
+ * 画面スリープ防止を解放する。
+ */
+async function releaseWakeLock() {
+    if (!wakeLock) return;
+    try {
+        await wakeLock.release();
+        wakeLock = null;
+        console.log('Screen Wake Lock released.');
+    } catch (err) {
+        console.error(`Screen Wake Lock release failed: ${err.name} (${err.message})`);
     }
 }
 
@@ -888,6 +931,8 @@ function toggleScanning() {
 function startScanning() {
     if (!transitionTo(ScanState.SCANNING)) return;
 
+    requestWakeLock(); // スリープ防止を開始
+
     consecutiveErrorCount = 0;
     lastSentImageHash = null;
     lastFrameData = null;
@@ -907,6 +952,8 @@ function startScanning() {
 
 /** スキャンを停止してUIをリセットする。 */
 function stopScanning() {
+    releaseWakeLock(); // スリープ防止を解放
+
     // 全タイマーをクリア
     if (scanRafId) { cancelAnimationFrame(scanRafId); scanRafId = null; }
     if (retryTimerId) { clearTimeout(retryTimerId); retryTimerId = null; }
@@ -1790,6 +1837,30 @@ function setMode(mode) {
 
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 画面スリープ防止 (Screen Wake Lock) - 設定
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/** localStorageからスリープ防止設定を復元する。 */
+function restoreWakeLockSetting() {
+    const saved = localStorage.getItem('visionWakeLock');
+    // デフォルトは有効 (true)
+    isWakeLockEnabled = saved !== '0';
+
+    const chk = document.getElementById('chk-wake-lock');
+    if (chk) chk.checked = isWakeLockEnabled;
+
+    // スキャン中なら状態を即時反映
+    if (scanState !== ScanState.IDLE && scanState !== ScanState.ANALYZING) {
+        if (isWakeLockEnabled) {
+            requestWakeLock();
+        } else {
+            releaseWakeLock();
+        }
+    }
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 初期化
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1934,9 +2005,32 @@ async function init() {
         });
     }
 
-    // 画面離脱時にカメラを確実に解放する（LED点灯残り防止）
+    // 画面スリープ防止チェックボックス
+    const chkWakeLock = document.getElementById('chk-wake-lock');
+    if (chkWakeLock) {
+        chkWakeLock.addEventListener('change', (e) => {
+            isWakeLockEnabled = e.target.checked;
+            localStorage.setItem('visionWakeLock', isWakeLockEnabled ? '1' : '0');
+            // 設定変更を即時反映
+            if (isWakeLockEnabled && scanState !== ScanState.IDLE) {
+                requestWakeLock();
+            } else {
+                releaseWakeLock();
+            }
+        });
+    }
+
+    // 画面の表示/非表示でスリープ防止を制御
     document.addEventListener('visibilitychange', () => {
-        if (document.hidden) stopCameraStream();
+        // 非表示になったらスリープ防止を解放
+        if (document.hidden) {
+            releaseWakeLock();
+        } else {
+            // 再表示されたとき、スキャン中ならスリープ防止を再要求
+            if (scanState !== ScanState.IDLE && scanState !== ScanState.ANALYZING) {
+                requestWakeLock();
+            }
+        }
     });
 
     setupCamera();
@@ -1944,6 +2038,7 @@ async function init() {
     loadApiUsage();
     restoreScanMode();
     restoreDryRun();
+    restoreWakeLockSetting();
     // 初期設定を並列取得（片方が失敗しても他方に影響しない）
     Promise.allSettled([loadRateLimits(), loadProxyConfig()]);
 }

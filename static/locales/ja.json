@@ -113,7 +113,9 @@
     "continuousDesc": "解析完了後も自動的にスキャンを継続し、次の安定フレームを検出して解析を繰り返します。",
     "dupSkipLabel": "重複スキップ回数",
     "dupSkipDesc": "同じ内容を指定回数読み取ったら、カメラが動くまで一時停止します。",
-    "dupSkipUnit": "{count}回"
+    "dupSkipUnit": "{count}回",
+    "keepWakeLabel": "画面スリープ防止",
+    "keepWakeDesc": "アクティブな間、画面が自動的にオフにならないようにします。"
   },
   "lang": {
     "switchTitle": "言語切替",

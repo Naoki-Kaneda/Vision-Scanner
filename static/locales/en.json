@@ -113,7 +113,9 @@
     "continuousDesc": "Continues scanning automatically after analysis, detecting the next stable frame.",
     "dupSkipLabel": "Duplicate Skip Count",
     "dupSkipDesc": "Pauses scanning after detecting the same content a specified number of times until the camera moves.",
-    "dupSkipUnit": "{count} times"
+    "dupSkipUnit": "{count} times",
+    "keepWakeLabel": "Keep Screen Awake",
+    "keepWakeDesc": "Prevents the screen from automatically turning off while active."
   },
   "lang": {
     "switchTitle": "Switch language",
