@@ -12,7 +12,9 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # ubuntu-latest は 2026-10 から Ubuntu 26 へ順次切り替わる。
+    # 固定の playwright 1.49 が対応する 24.04 に留める
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
@@ -30,6 +32,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-lock.txt
           pip install -r requirements-dev.txt
+
+      - name: E2E テスト用ブラウザのインストール
+        run: python -m playwright install --with-deps chromium
 
       - name: シークレット検出（detect-secrets）
         run: |
@@ -50,7 +55,7 @@ jobs:
         run: python -m pip_audit
 
       - name: OSV-Scanner 間接依存の脆弱性チェック
-        uses: google/osv-scanner-action/osv-scanner-action@v2
+        uses: google/osv-scanner-action/osv-scanner-action@v2.7.0
         with:
           scan-args: |-
             --lockfile=requirements-lock.txt
