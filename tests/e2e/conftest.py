@@ -35,7 +35,8 @@ def page(live_server):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context()
+        # 画面はブラウザの言語で日英が切り替わる。テストは日本語表示を前提にするので固定する
+        context = browser.new_context(locale="ja-JP")
         pg = context.new_page()
         pg.goto(live_server)
         yield pg

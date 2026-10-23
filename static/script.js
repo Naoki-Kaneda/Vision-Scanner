@@ -1958,7 +1958,31 @@ async function init() {
     const helpPopup = document.getElementById('help-popup');
     const btnHelpClose = document.getElementById('btn-help-close');
     if (btnHelp && helpPopup) {
-        btnHelp.addEventListener('click', () => helpPopup.classList.toggle('hidden'));
+        // ? ボタンの上下のうち広いほうに出し、高さは画面の端までに収める。
+        // 画面が低くても見出しと×が隠れず、? ボタンも覆わない
+        const placeHelpPopup = () => {
+            const panelRect = helpPopup.closest('.video-panel').getBoundingClientRect();
+            const btnRect = btnHelp.getBoundingClientRect();
+            const gap = 8;
+            const spaceAbove = btnRect.top - gap * 2;
+            const spaceBelow = window.innerHeight - btnRect.bottom - gap * 2;
+            if (spaceAbove >= spaceBelow) {
+                helpPopup.style.top = 'auto';
+                helpPopup.style.bottom = `${panelRect.bottom - btnRect.top + gap}px`;
+            } else {
+                helpPopup.style.top = `${btnRect.bottom - panelRect.top + gap}px`;
+                helpPopup.style.bottom = 'auto';
+            }
+            helpPopup.style.maxHeight = `${Math.max(spaceAbove, spaceBelow, 120)}px`;
+        };
+        btnHelp.addEventListener('click', () => {
+            helpPopup.classList.toggle('hidden');
+            if (!helpPopup.classList.contains('hidden')) placeHelpPopup();
+        });
+        // 画面の回転などで ? ボタンが動いたら置き直す
+        window.addEventListener('resize', () => {
+            if (!helpPopup.classList.contains('hidden')) placeHelpPopup();
+        });
         if (btnHelpClose) btnHelpClose.addEventListener('click', () => helpPopup.classList.add('hidden'));
         // ポップアップ外をクリックで閉じる
         document.addEventListener('click', (e) => {

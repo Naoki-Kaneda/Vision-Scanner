@@ -52,6 +52,15 @@ info "1/7 システムパッケージをインストール中..."
 apt-get update -qq
 apt-get install -y -qq python3 python3-venv python3-pip nginx openssl > /dev/null
 
+# Pillow 13 は Python 3.11 以上が必要。Ubuntu 22.04 の python3 は 3.10 なので python3.11 を入れて使う
+if python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))'; then
+    PYTHON=python3
+else
+    apt-get install -y -qq python3.11 python3.11-venv > /dev/null
+    PYTHON=python3.11
+fi
+info "使用する Python: $("$PYTHON" --version)"
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 2. アプリケーションユーザー作成
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -77,7 +86,7 @@ rsync -a --exclude='deploy' --exclude='venv' --exclude='.venv' \
 # 4. Python仮想環境と依存関係
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 info "4/7 Python仮想環境をセットアップ中..."
-python3 -m venv "${APP_DIR}/venv"
+"$PYTHON" -m venv "${APP_DIR}/venv"
 "${APP_DIR}/venv/bin/pip" install --upgrade pip -q
 "${APP_DIR}/venv/bin/pip" install -r "${APP_DIR}/requirements.txt" -q
 info "依存パッケージのインストール完了。"

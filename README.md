@@ -47,6 +47,8 @@ source venv/bin/activate
 
 > 成功すると、ターミナルの先頭に `(venv)` と表示されます。
 
+> Python 3.11 以上が必要です。Ubuntu 22.04 の `python3` は 3.10 なので、先に `sudo apt install -y python3.11 python3.11-venv` を実行し、`python3.11 -m venv venv` で作成してください。
+
 #### ステップ4: ライブラリのインストール
 
 ```bash
@@ -115,6 +117,8 @@ sudo systemctl restart vision-scanner
 ```
 
 > サービス名は `sudo systemctl list-units --type=service | grep vision` で確認できます。
+
+> `pip install` が `No matching distribution found for Pillow==13.0.0` で止まる場合は、venv が Python 3.10 で作られています。今の `venv` を `venv-old` に名前を変えて残し、`python3.11 -m venv venv` で作り直してから `pip install -r requirements.txt` を実行してください。
 
 **手動起動（nohup）で運用している場合:**
 

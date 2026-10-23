@@ -78,66 +78,69 @@
                         <span class="help-popup-title" data-i18n="help.title">モード説明</span>
                         <button id="btn-help-close" class="help-popup-close" data-i18n-aria="help.close" aria-label="ヘルプを閉じる">&times;</button>
                     </div>
-                    <div class="help-popup-body">
-                        <div class="help-item">
-                            <span class="help-mode-badge text" data-i18n="mode.text">テキスト</span>
-                            <p data-i18n="help.textDesc">カメラに映った文字を読み取ります（OCR）。書類、看板、名刺などのテキスト抽出に最適です。</p>
-                        </div>
-                        <div class="help-item">
-                            <span class="help-mode-badge object" data-i18n="mode.object">物体</span>
-                            <p data-i18n="help.objectDesc">映像内の物体を検出し、名前と位置を表示します。ボトル、箱、機器などを自動認識します。</p>
-                        </div>
-                        <div class="help-item">
-                            <span class="help-mode-badge label" data-i18n="mode.label">ラベル</span>
-                            <p data-i18n="help.labelDesc">ラベルの有無を判定します。テキストが読み取れれば OK、読み取れなければ NG と表示します。検査間隔は5秒です。</p>
-                        </div>
-                        <div class="help-item">
-                            <span class="help-mode-badge face" data-i18n="mode.face">顔</span>
-                            <p data-i18n="help.faceDesc">顔を検出し、表情（喜び・悲しみ・怒り・驚き）を分析します。複数の顔を同時に検出できます。</p>
-                        </div>
-                        <div class="help-item">
-                            <span class="help-mode-badge logo" data-i18n="mode.logo">ロゴ</span>
-                            <p data-i18n="help.logoDesc">画像内のブランドロゴを検出し、名前とスコアを表示します。商品パッケージの確認に便利です。</p>
-                        </div>
-                        <div class="help-item">
-                            <span class="help-mode-badge classify" data-i18n="mode.classify">分類</span>
-                            <p data-i18n="help.classifyDesc">画像全体をAIが分類し、タグ付けします。「何が映っているか」を概要として把握できます。</p>
-                        </div>
-                        <div class="help-item">
-                            <span class="help-mode-badge web" data-i18n="mode.web">Web</span>
-                            <p data-i18n="help.webDesc">類似画像をWeb上から検索し、推定名・関連ページ・類似画像のリンクを表示します。</p>
-                        </div>
-                    </div>
-                    <div class="help-settings">
-                        <div class="help-settings-title" data-i18n="help.settingsTitle">設定</div>
-                        <div class="help-setting-item">
-                            <label data-i18n="help.scanModeLabel">スキャンモード</label>
-                            <p class="help-setting-desc">
-                                <strong>ワンショット (1x)</strong>: <span data-i18n="help.oneShotDesc">1回撮影したら結果を表示して停止します。</span><br>
-                                <strong>連続よみ (∞)</strong>: <span data-i18n="help.continuousDesc">解析完了後も自動的にスキャンを継続し、次の安定フレームを検出して解析を繰り返します。</span>
-                            </p>
-                        </div>
-                        <div class="help-setting-item">
-                            <label for="duplicate-skip-count" data-i18n="help.dupSkipLabel">重複スキップ回数</label>
-                            <div class="help-setting-control">
-                                <input type="range" id="duplicate-skip-count" min="1" max="5" value="2" step="1">
-                                <span id="duplicate-skip-value" class="help-setting-value">2回</span>
+                    <!-- 見出しは固定し、説明・設定・版数をまとめてスクロールさせる -->
+                    <div class="help-popup-scroll">
+                        <div class="help-popup-body">
+                            <div class="help-item">
+                                <span class="help-mode-badge text" data-i18n="mode.text">テキスト</span>
+                                <p data-i18n="help.textDesc">カメラに映った文字を読み取ります（OCR）。書類、看板、名刺などのテキスト抽出に最適です。</p>
                             </div>
-                            <p class="help-setting-desc" data-i18n="help.dupSkipDesc">同じ内容を指定回数読み取ったら、カメラが動くまで一時停止します。</p>
-                        </div>
-                        <div class="help-setting-item">
-                            <span id="lbl-wake-lock" data-i18n="help.keepWakeLabel">画面スリープ防止</span>
-                            <div class="help-setting-control">
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="chk-wake-lock" aria-labelledby="lbl-wake-lock" checked>
-                                    <span class="toggle-track round"></span>
-                                </label>
+                            <div class="help-item">
+                                <span class="help-mode-badge object" data-i18n="mode.object">物体</span>
+                                <p data-i18n="help.objectDesc">映像内の物体を検出し、名前と位置を表示します。ボトル、箱、機器などを自動認識します。</p>
                             </div>
-                            <p class="help-setting-desc" data-i18n="help.keepWakeDesc">アクティブな間、画面が自動的にオフにならないようにします。</p>
+                            <div class="help-item">
+                                <span class="help-mode-badge label" data-i18n="mode.label">ラベル</span>
+                                <p data-i18n="help.labelDesc">ラベルの有無を判定します。テキストが読み取れれば OK、読み取れなければ NG と表示します。検査間隔は5秒です。</p>
+                            </div>
+                            <div class="help-item">
+                                <span class="help-mode-badge face" data-i18n="mode.face">顔</span>
+                                <p data-i18n="help.faceDesc">顔を検出し、表情（喜び・悲しみ・怒り・驚き）を分析します。複数の顔を同時に検出できます。</p>
+                            </div>
+                            <div class="help-item">
+                                <span class="help-mode-badge logo" data-i18n="mode.logo">ロゴ</span>
+                                <p data-i18n="help.logoDesc">画像内のブランドロゴを検出し、名前とスコアを表示します。商品パッケージの確認に便利です。</p>
+                            </div>
+                            <div class="help-item">
+                                <span class="help-mode-badge classify" data-i18n="mode.classify">分類</span>
+                                <p data-i18n="help.classifyDesc">画像全体をAIが分類し、タグ付けします。「何が映っているか」を概要として把握できます。</p>
+                            </div>
+                            <div class="help-item">
+                                <span class="help-mode-badge web" data-i18n="mode.web">Web</span>
+                                <p data-i18n="help.webDesc">類似画像をWeb上から検索し、推定名・関連ページ・類似画像のリンクを表示します。</p>
+                            </div>
                         </div>
-                    </div>
-                    <div class="help-version">
-                        Vision AI Scanner v{{ app_version }}
+                        <div class="help-settings">
+                            <div class="help-settings-title" data-i18n="help.settingsTitle">設定</div>
+                            <div class="help-setting-item">
+                                <label data-i18n="help.scanModeLabel">スキャンモード</label>
+                                <p class="help-setting-desc">
+                                    <strong>ワンショット (1x)</strong>: <span data-i18n="help.oneShotDesc">1回撮影したら結果を表示して停止します。</span><br>
+                                    <strong>連続よみ (∞)</strong>: <span data-i18n="help.continuousDesc">解析完了後も自動的にスキャンを継続し、次の安定フレームを検出して解析を繰り返します。</span>
+                                </p>
+                            </div>
+                            <div class="help-setting-item">
+                                <label for="duplicate-skip-count" data-i18n="help.dupSkipLabel">重複スキップ回数</label>
+                                <div class="help-setting-control">
+                                    <input type="range" id="duplicate-skip-count" min="1" max="5" value="2" step="1">
+                                    <span id="duplicate-skip-value" class="help-setting-value">2回</span>
+                                </div>
+                                <p class="help-setting-desc" data-i18n="help.dupSkipDesc">同じ内容を指定回数読み取ったら、カメラが動くまで一時停止します。</p>
+                            </div>
+                            <div class="help-setting-item">
+                                <span id="lbl-wake-lock" data-i18n="help.keepWakeLabel">画面スリープ防止</span>
+                                <div class="help-setting-control">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="chk-wake-lock" aria-labelledby="lbl-wake-lock" checked>
+                                        <span class="toggle-track round"></span>
+                                    </label>
+                                </div>
+                                <p class="help-setting-desc" data-i18n="help.keepWakeDesc">アクティブな間、画面が自動的にオフにならないようにします。</p>
+                            </div>
+                        </div>
+                        <div class="help-version">
+                            Vision AI Scanner v{{ app_version }}
+                        </div>
                     </div>
                 </div>
 

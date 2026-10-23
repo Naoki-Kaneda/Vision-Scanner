@@ -212,7 +212,8 @@ def _static_file_hash(filename: str) -> str:
         if cached and cached[0] == mtime:
             return cached[1]
         with open(filepath, "rb") as f:
-            digest = hashlib.md5(f.read()).hexdigest()[:8]
+            # キャッシュ破棄用の識別子であり、セキュリティ用途ではない
+            digest = hashlib.md5(f.read(), usedforsecurity=False).hexdigest()[:8]
         _static_hash_cache[filename] = (mtime, digest)
         return digest
     except OSError:
@@ -700,7 +701,7 @@ def analyze_endpoint():
     if validation_error:
         return validation_error
     # バリデーション通過後は全て非None（mypy型絞り込み用）
-    assert image_data is not None and mode is not None and dry_run is not None
+    assert image_data is not None and mode is not None and dry_run is not None  # nosec B101 -- 直前の検証で保証済み
 
     client_ip = request.remote_addr or "unknown"
 
@@ -730,7 +731,7 @@ def analyze_endpoint():
         )
 
     # 制限なしの場合、req_idは必ず非None（mypy型絞り込み用）
-    assert req_id is not None
+    assert req_id is not None  # nosec B101 -- 直前の分岐で保証済み
 
     # ─── Vision API呼び出し ─────────────
     try:
@@ -764,7 +765,8 @@ if __name__ == "__main__":
     ssl_key = os.environ.get("SSL_KEY_PATH")
     if ssl_cert and ssl_key:
         logger.info("HTTPS モードで起動 (証明書: %s)", ssl_cert)
-        app.run(debug=FLASK_DEBUG, host="0.0.0.0", port=APP_PORT,
+        # LAN 内のスマホ・タブレットからカメラ画面を開くため全インターフェースで待ち受ける
+        app.run(debug=FLASK_DEBUG, host="0.0.0.0", port=APP_PORT,  # nosec B104
                 ssl_context=(ssl_cert, ssl_key))
     else:
         app.run(debug=FLASK_DEBUG, port=APP_PORT)
