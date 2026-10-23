@@ -23,7 +23,7 @@ Vision AI Scanner のローカル開発環境セットアップからクラウ�
 
 | 項目 | バージョン |
 |------|-----------|
-| Python | 3.12.0（`runtime.txt` で指定） |
+| Python | 3.11 以上（Pillow 13 の要件）。本番は 3.12.0（`runtime.txt` で指定） |
 | pip | 最新版を推奨 |
 | Git | 2.x 以上 |
 | Google Cloud Vision API キー | 必須（取得手順は後述） |
@@ -54,6 +54,8 @@ source venv/bin/activate
 ```
 
 > 仮想環境が有効になると、プロンプトの先頭に `(venv)` と表示されます。
+
+> Ubuntu 22.04 の `python3` は 3.10 です。`sudo apt install -y python3.11 python3.11-venv` のあと `python3.11 -m venv venv` で作成してください。
 
 ### 1-3. 依存ライブラリのインストール
 
