@@ -9,6 +9,12 @@ markers = [
 
 [tool.ruff]
 exclude = ["tests/e2e/*"]
+force-exclude = true
+
+# ruff format は使わない（既存コードの約1,950行が変わり、手で揃えた辞書の並びも崩れるため）。
+# 誤って `ruff format .` を実行しても何も変えないよう、全ファイルを対象外にする。
+[tool.ruff.format]
+exclude = ["*"]
 
 # ─── mypy 静的型チェック設定 ─────────────────────
 [tool.mypy]

@@ -1,0 +1,17 @@
+# エディタ共通の書式（既存ファイルの書き方に合わせている）
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json}]
+indent_size = 2
+
+# Markdown は行末の空白2つが改行の意味を持つので削らない
+[*.md]
+trim_trailing_whitespace = false
