@@ -151,6 +151,7 @@ pip-compile requirements.in -o requirements-lock.txt --strip-extras --no-header
 - **管理APIブルートフォース防御**: 5分間に5回認証失敗でIPブロック（429）
 - **Permissions-Policy**: `camera=(self), microphone=()`
 - **PIIマスキング**: ログ出力前に個人情報を自動マスク（`pii_mask.py`）
+- **pre-commitフック**: detect-secrets（シークレット検出）+ ruff（自動修正）。`pre-commit install` 後に`git commit`時に実行。既知の誤検知は`.secrets.baseline`に記録済み（ファイル名の区切りは`/`。Windowsで更新したら`/`にそろえる）
 
 ### CI/CD
 

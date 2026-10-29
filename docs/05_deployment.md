@@ -383,8 +383,10 @@ CI を有効に機能させるため、GitHub のブランチ保護ルールを�
 
 ### 6-1. pre-commit のインストール
 
+`pre-commit` と `detect-secrets` は開発用の依存に入っています。
+
 ```bash
-pip install pre-commit
+pip install -r requirements-dev.txt
 ```
 
 ### 6-2. フックのインストール
@@ -402,17 +404,21 @@ pre-commit install
 | `detect-secrets` | Yelp/detect-secrets | v1.5.0 | API キー・パスワード等のシークレットがコードに含まれていないか検出。`.secrets.baseline` をベースラインとして使用 |
 | `ruff` | astral-sh/ruff-pre-commit | v0.9.6 | Python のリント + 自動修正（`--fix` オプション付き） |
 
-### 6-4. ベースラインの初期化（初回のみ）
+### 6-4. ベースライン（`.secrets.baseline`）
 
-`detect-secrets` はベースラインファイルを使って誤検知を管理します。
+`detect-secrets` はベースラインに記録済みの候補（誤検知と判定したテスト用の値・文書の例）を無視し、新しい候補だけで止めます。ベースラインはコミット済みです。週次スキャン（`secrets-scan.yml`）も同じベースラインで既知の候補を除きます。
+
+誤検知を新しく許可するときは、ベースラインを更新してコミットします。
 
 ```bash
-# ベースラインファイルを生成
-detect-secrets scan --exclude-files '\.lock$' > .secrets.baseline
+# 既存のベースラインに新しい候補を追記する（フックと同じ版で実行）
+detect-secrets scan --baseline .secrets.baseline --exclude-files '\.lock$|\.txt$|package-lock\.json$'
 
-# ベースラインの確認・更新
+# 追記された候補が本物か誤検知かを1件ずつ判定する
 detect-secrets audit .secrets.baseline
 ```
+
+Windows で更新するとファイル名の区切りが `\` になり、Linux で照合できなくなります。`/` にそろえてからコミットしてください。
 
 ### 6-5. 手動でのフック実行
 

@@ -5,7 +5,8 @@ repos:
     hooks:
       - id: detect-secrets
         args: ['--baseline', '.secrets.baseline']
-        exclude: \.lock$|\.txt$
+        # ベースラインの作成時（--exclude-files）と同じ条件にそろえる
+        exclude: \.lock$|\.txt$|package-lock\.json$
 
   # Python リントチェック
   - repo: https://github.com/astral-sh/ruff-pre-commit

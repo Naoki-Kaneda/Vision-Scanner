@@ -365,14 +365,18 @@ RATE_LIMIT_DAILY=500
 **仕組み:**
 
 1. `detect-secrets` でリポジトリ全体をスキャン
-2. シークレット候補が検出された場合、`security` ラベル付きの Issue を自動作成
-3. Issue にはファイル名・行番号・シークレットの種別が記載される
+2. `.secrets.baseline` に記録済み（誤検知と判定済み）の候補を除く
+3. 新しい候補が残った場合だけ、`security` ラベル付きの Issue を自動作成
+4. Issue にはファイル名・行番号・シークレットの種別が記載される
 
 **除外対象:**
 - `.lock` ファイル
-- `.secrets-baseline` ファイル
+- `.secrets.baseline` ファイル
+- `package-lock.json`（整合性ハッシュが誤検知されるため）
 - `venv/` ディレクトリ
 - `.venv/` ディレクトリ
+
+> GitHub は、公開リポジトリで 60 日間コミットが無いと定期実行（schedule）を自動で無効にします。Actions タブで「シークレット定期スキャン」が無効になっていたら、「Enable workflow」で有効に戻してください。
 
 ### 6-2. 手動スキャンの実行
 
