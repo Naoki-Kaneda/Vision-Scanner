@@ -1,5 +1,5 @@
 # 開発・テスト依存
-# pip-compile requirements-dev.in -o requirements-dev-lock.txt で lock ファイルを再生成
+# requirements-dev.txt は直接依存だけを手で版固定している。ここを編集したら requirements-dev.txt も合わせる
 -r requirements.in
 pytest>=9,<10
 ruff>=0.9,<1

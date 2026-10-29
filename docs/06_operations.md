@@ -131,10 +131,20 @@ curl -s https://your-app.onrender.com/readyz | python -m json.tool
 
 | 項目 | 設定値 |
 |------|--------|
-| ログレベル | `INFO`（デフォルト）。`FLASK_DEBUG=true` で `DEBUG` |
+| ログレベル | `INFO`（開発時は `app.py` の `basicConfig` で固定。gunicorn 配下では gunicorn のログ設定に従う。`FLASK_DEBUG` では変わらない） |
+| 出力先 | 標準出力のみ（ファイルには書かない）。下の表の場所で読む |
 | マスキング対象 | プロキシ URL 内の認証情報（`user:pass` → `***:***`） |
 | API レスポンス最大文字数 | エラー時 500 文字に制限 |
 | 相関 ID | 全リクエストに `request_id` を付与（`X-Request-Id` ヘッダー + ログ） |
+
+ログの読み方は起動方法ごとに異なります。
+
+| 起動方法 | ログの場所 | 読み方 |
+|---------|-----------|--------|
+| Ubuntu（systemd、`deploy/setup-ubuntu.sh` で構築） | journald | `journalctl -u vision-scanner -f` |
+| Ubuntu（`nohup ./start.sh > app.log 2>&1 &`、README の手順） | リポジトリ直下の `app.log`（Git の追跡対象外） | `tail -f app.log` |
+| Windows（`start.bat` / `python app.py`） | 起動したコンソール | ファイルに残すなら `python app.py > app.log 2>&1` |
+| Render | Render ダッシュボードの Logs | ダッシュボードで閲覧 |
 
 ### 2-2. 起動時に確認すべき WARNING
 
@@ -167,8 +177,10 @@ curl -s https://your-app.onrender.com/readyz | python -m json.tool
 - **サーバーログ側**: ログ内の `request_id=...` で検索
 
 ```bash
-# 特定リクエストのログを追跡
-grep "request_id=abc12345def67890" /var/log/app.log
+# 特定リクエストのログを追跡（systemd で動かしている場合）
+journalctl -u vision-scanner | grep "request_id=abc12345def67890"
+# nohup で app.log に出している場合
+grep "request_id=abc12345def67890" app.log
 ```
 
 ---

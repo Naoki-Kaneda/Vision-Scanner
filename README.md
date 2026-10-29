@@ -15,7 +15,7 @@
 ## セットアップ
 
 ### 必要なもの
-- Python 3.9以上
+- Python 3.11以上（本番の Render は 3.12.0）
 - Git
 - Google Cloud Vision APIキー（[取得方法はこちら](#google-cloud-vision-apiキーの取得方法)）
 
