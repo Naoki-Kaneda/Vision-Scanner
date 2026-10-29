@@ -57,6 +57,7 @@ pip-audit
 # フロントエンド（static/ の JS）の確認（Node.js 22以上。アプリの実行には不要）
 npm ci
 npm run check       # 型チェック（tsc。script.js 先頭の // @ts-check と jsconfig.json）
+npm run lint        # リンター（ESLint、eslint.config.mjs）
 ```
 
 **依存ファイルの使い分け:**
@@ -155,7 +156,7 @@ pip-compile requirements.in -o requirements-lock.txt --strip-extras --no-header
 
 ### CI/CD
 
-- `.github/workflows/ci.yml`: `test` ジョブ＝pytest（Python 3.11/3.12/3.13） + ruff + mypy + bandit + pip-audit + osv-scanner + detect-secrets、`frontend` ジョブ＝JSの型チェック
+- `.github/workflows/ci.yml`: `test` ジョブ＝pytest（Python 3.11/3.12/3.13） + ruff + mypy + bandit + pip-audit + osv-scanner + detect-secrets、`frontend` ジョブ＝JSの型チェック + ESLint
 - `.github/workflows/secrets-scan.yml`: 毎週月曜にシークレットスキャン。検出時はGitHub Issue自動作成
 - `.github/dependabot.yml`: pip・npm依存+GitHub Actions週次チェック
 - Renderへの自動デプロイ: mainブランチへのpushで `gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 30` が起動

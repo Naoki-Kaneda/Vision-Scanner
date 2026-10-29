@@ -83,3 +83,6 @@ jobs:
 
       - name: JS 型チェック（tsc）
         run: npm run check
+
+      - name: JS リンター（ESLint）
+        run: npm run lint

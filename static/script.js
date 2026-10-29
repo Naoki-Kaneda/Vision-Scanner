@@ -22,7 +22,7 @@ async function loadLocale(lang) {
         const btnLang = document.getElementById('btn-lang');
         if (btnLang) btnLang.textContent = lang.toUpperCase();
     } catch (e) {
-        console.warn(`ロケール ${lang} の読み込みに失敗、jaにフォールバック`);
+        console.warn(`ロケール ${lang} の読み込みに失敗、jaにフォールバック`, e);
         if (lang !== 'ja') await loadLocale('ja');
     }
 }
@@ -1031,7 +1031,6 @@ function _updateMotionIndicator(avgDiff) {
  * フレーム間差分で安定状態を検出し、安定したらキャプチャする。
  * statusText は状態遷移時のみ更新（チラつき防止）。進捗はプログレスバーのみ。
  */
-let lastStabilityState = 'idle'; // idle | stabilizing | captured | moving
 function checkStabilityAndCapture() {
     if (!video.videoWidth) return;
 
@@ -1051,7 +1050,6 @@ function checkStabilityAndCapture() {
                 stabilityBarFill.style.width = progress + '%';
                 stabilityBarFill.classList.remove('captured', 'cooldown', 'interval-wait', 'paused-duplicate');
             }
-            lastStabilityState = 'stabilizing';
 
             if (stabilityCounter >= STABILITY_THRESHOLD) {
                 // 重複一時停止中はキャプチャをスキップ（バーは100%で待機）
@@ -1060,7 +1058,6 @@ function checkStabilityAndCapture() {
                     return;
                 }
                 // 安定完了 → キャプチャ実行
-                lastStabilityState = 'captured';
                 if (stabilityBarFill) {
                     stabilityBarFill.style.width = '100%';
                     stabilityBarFill.classList.add('captured');
@@ -1076,7 +1073,6 @@ function checkStabilityAndCapture() {
                 const capturedMode = currentMode;
                 setTimeout(() => {
                     if (scanState === ScanState.SCANNING && currentMode === capturedMode) {
-                        lastStabilityState = 'idle';
                         _resetStabilityBar();
                         if (statusText) statusText.textContent = t('scan.scanning');
                     }
@@ -1095,7 +1091,6 @@ function checkStabilityAndCapture() {
                 updateDupSkipBadge();
             }
             _resetStabilityBar();
-            lastStabilityState = 'moving';
         }
     }
 
@@ -1110,6 +1105,8 @@ function checkStabilityAndCapture() {
 /** オーバーレイCanvasをクリアする。 */
 function clearOverlay() {
     if (!overlayCanvas) return;
+    // 幅を代入し直すと、描画内容と変形状態がまとめて初期化される（意図的な自己代入）
+    // eslint-disable-next-line no-self-assign
     overlayCanvas.width = overlayCanvas.width;
 }
 
@@ -1344,7 +1341,7 @@ async function captureAndAnalyze() {
             }
         // Web類似検索モード: カード表示
         } else if (result.ok && currentMode === 'web') {
-            addWebResult(result.web_detail || {}, result.data || []);
+            addWebResult(result.web_detail || {});
         // テキスト・物体・ロゴモード: 通常の結果表示
         } else if (result.ok && result.data && result.data.length > 0) {
             drawBoundingBoxes(result.data, result.image_size);
@@ -1401,7 +1398,6 @@ async function captureAndAnalyze() {
                     if (scanState !== ScanState.SCANNING) return;
                     _resetStabilityBar();
                     stabilityCounter = 0;
-                    lastStabilityState = 'idle';
                     if (statusText) statusText.textContent = t('scan.scanning');
                     scanRafId = requestAnimationFrame(scanLoop);
                 }, CONTINUOUS_SCAN_INTERVAL_MS);
@@ -1696,9 +1692,8 @@ function addClassifyResult(items) {
 /**
  * Web類似検索結果を結果リストに追加する。
  * @param {Object} webDetail - {best_guess, entities, pages, similar_images}
- * @param {Array} data - 統一データ形式（フォールバック用）
  */
-function addWebResult(webDetail, data) {
+function addWebResult(webDetail) {
     _removePlaceholder();
 
     const div = document.createElement('div');
