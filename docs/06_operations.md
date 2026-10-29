@@ -133,7 +133,7 @@ curl -s https://your-app.onrender.com/readyz | python -m json.tool
 |------|--------|
 | ログレベル | `INFO`（開発時は `app.py` の `basicConfig` で固定。gunicorn 配下では gunicorn のログ設定に従う。`FLASK_DEBUG` では変わらない） |
 | 出力先 | 標準出力のみ（ファイルには書かない）。下の表の場所で読む |
-| マスキング対象 | プロキシ URL 内の認証情報（`user:pass` → `***:***`） |
+| マスキング対象 | プロキシ URL 内の認証情報（`user:pass` → `***:***`）、構造化ログの文字列の値に含まれる PII（電話番号・メールアドレス・カード番号風・12桁の数字。`pii_mask.py`） |
 | API レスポンス最大文字数 | エラー時 500 文字に制限 |
 | 相関 ID | 全リクエストに `request_id` を付与（`X-Request-Id` ヘッダー + ログ） |
 
@@ -173,6 +173,7 @@ curl -s https://your-app.onrender.com/readyz | python -m json.tool
 | `vision_parse_error` | ERROR | Vision API の応答が JSON として読めない | `content_type` を確認。プロキシのエラーページが返っていることが多い |
 | `vision_partial_error` | WARNING | 応答の一部がエラー（`code`・`error`） | 画像の形式・サイズを確認 |
 | `preprocess_skipped` | WARNING | 画像強調を省略して解析を続けた | 頻発する場合は画像の形式を確認 |
+| `vision_response` | INFO | Vision API の応答に含まれていた項目名（`keys`） | 正常。結果が空のときの切り分けに使う |
 | `vision_result` | INFO | モードごとの検出件数 | 正常 |
 
 すべて `event=<名前> request_id=<相関ID> key=value ...` の1行で、文字列の値は PII マスク済みです（書式は `pii_mask.format_log_event()`）。
@@ -379,6 +380,7 @@ RATE_LIMIT_DAILY=500
 
 **除外対象:**
 - `.lock` ファイル
+- `.txt` ファイル（requirements*.txt 等。ベースライン作成時・pre-commit と同じ条件）
 - `.secrets.baseline` ファイル
 - `package-lock.json`（整合性ハッシュが誤検知されるため）
 - `venv/` ディレクトリ

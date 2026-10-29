@@ -1,5 +1,5 @@
 # 開発・テスト依存
-# requirements-dev.txt は直接依存だけを手で版固定している。ここを編集したら requirements-dev.txt も合わせる
+# requirements-dev.txt は直接依存だけを手で書いている（多くは == で固定、一部は範囲指定）。ここを編集したら requirements-dev.txt も合わせる
 -r requirements.in
 pytest>=9,<10
 ruff>=0.9,<1

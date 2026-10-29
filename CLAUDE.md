@@ -65,7 +65,7 @@ npm test            # 単体テスト（tests/js/、node --test）
 - `requirements.in`: トップレベル本番依存（バージョン範囲指定、pip-compileの入力）
 - `requirements-dev.in`: トップレベル開発依存（pip-compileの入力）
 - `requirements.txt`: 本番依存のピン留め（Renderデプロイで使用）
-- `requirements-dev.txt`: 開発・テスト依存（pytest, ruff, bandit, pip-tools等）。直接依存だけを手で版固定（lockファイルは作っていない）
+- `requirements-dev.txt`: 開発・テスト依存（pytest, ruff, bandit, pip-tools等）。直接依存だけを手で書く（多くは `==` で版固定、mypy・types-* 等は範囲指定。lockファイルは作っていない）
 - `requirements-lock.txt`: pip-compileで自動生成されたサブ依存込みのピン留め（CI使用）
 
 **依存管理ワークフロー（pip-tools）:**

@@ -40,7 +40,8 @@ jobs:
       - name: シークレット検出（detect-secrets）
         run: |
           pip install detect-secrets
-          detect-secrets scan --exclude-files '\.lock$' > .secrets-ci.json
+          # package-lock.json の整合性ハッシュは誤検知になるので除外する
+          detect-secrets scan --exclude-files '\.lock$|package-lock\.json$' > .secrets-ci.json
           detect-secrets audit --report .secrets-ci.json || true
 
       - name: Ruff リントチェック
