@@ -52,6 +52,10 @@ bandit -r . --exclude ./tests,./venv,./.venv -q
 
 # 依存関係の脆弱性チェック
 pip-audit
+
+# フロントエンド（static/ の JS）の確認（Node.js 22以上。アプリの実行には不要）
+npm ci
+npm run check       # 型チェック（tsc。script.js 先頭の // @ts-check と jsconfig.json）
 ```
 
 **依存ファイルの使い分け:**

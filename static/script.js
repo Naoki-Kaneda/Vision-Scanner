@@ -1,3 +1,4 @@
+// @ts-check
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Vision AI Scanner - フロントエンドスクリプト
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -60,7 +61,7 @@ function _applyI18nToDom() {
     document.querySelectorAll('[data-i18n-title]').forEach(el => {
         const key = el.getAttribute('data-i18n-title');
         const translated = t(key);
-        if (translated !== key) el.title = translated;
+        if (translated !== key) el.setAttribute('title', translated);
     });
     document.querySelectorAll('[data-i18n-aria]').forEach(el => {
         const key = el.getAttribute('data-i18n-aria');
@@ -145,6 +146,7 @@ const ScanState = Object.freeze({
     PAUSED_DUPLICATE:  'PAUSED_DUPLICATE',  // 重複検出で一時停止
     COOLDOWN:          'COOLDOWN',          // レート制限待機
 });
+/** @typedef {typeof ScanState[keyof typeof ScanState]} ScanStateValue スキャン状態の値 */
 
 const SCAN_TRANSITIONS = Object.freeze({
     IDLE:              ['SCANNING'],
@@ -195,14 +197,20 @@ function fetchSignal(ms = FETCH_TIMEOUT_MS) {
 }
 
 // ─── DOM要素の参照（init() で DOMContentLoaded 後に取得） ────
-let video, canvas, ctx, overlayCanvas, overlayCtx;
-let resultList, btnScan, statusDot, statusText;
-let videoContainer, stabilityBarContainer, stabilityBarFill;
-let btnProxy, apiCounter, dupSkipBadge, cameraSelector;
-let btnCamera, btnFile, btnFlipCam;
-let modeText, modeObject, modeLabel, modeFace, modeLogo, modeClassify, modeWeb;
+/** @type {HTMLVideoElement} */ let video;
+/** @type {HTMLCanvasElement} */ let canvas;
+/** @type {HTMLCanvasElement} */ let overlayCanvas;
+/** @type {CanvasRenderingContext2D} */ let ctx;
+/** @type {CanvasRenderingContext2D} */ let overlayCtx;
+/** @type {HTMLSelectElement} */ let cameraSelector;
+/** @type {HTMLElement} */ let resultList, btnScan, statusDot, statusText;
+/** @type {HTMLElement} */ let videoContainer, stabilityBarContainer, stabilityBarFill;
+/** @type {HTMLElement} */ let btnProxy, apiCounter, dupSkipBadge;
+/** @type {HTMLElement} */ let btnCamera, btnFile, btnFlipCam;
+/** @type {HTMLElement} */ let modeText, modeObject, modeLabel, modeFace, modeLogo, modeClassify, modeWeb;
 
 // ─── アプリケーション状態 ──────────────────────────
+/** @type {ScanStateValue} */
 let scanState = ScanState.IDLE;      // スキャン状態機械（旧: isScanning等のフラグ群）
 let currentSource = 'camera';
 let currentMode = 'text';
@@ -287,7 +295,7 @@ function compareImageHash(hashA, hashB) {
 
 /**
  * スキャン状態を遷移させる。不正な遷移は警告を出して拒否する。
- * @param {string} newState - 遷移先のScanState値
+ * @param {ScanStateValue} newState - 遷移先のScanState値
  * @returns {boolean} 遷移成功ならtrue
  */
 function transitionTo(newState) {
@@ -676,7 +684,7 @@ function isApiLimitReached() {
 /** カメラストリームを停止する。 */
 function stopCameraStream() {
     if (video.srcObject) {
-        video.srcObject.getTracks().forEach(track => track.stop());
+        /** @type {MediaStream} */ (video.srcObject).getTracks().forEach(track => track.stop());
         video.srcObject = null;
     }
 }
@@ -823,7 +831,7 @@ function updateFlipButtonVisibility() {
 
     // 現在のストリームのトラックから判定を試みる
     if (video.srcObject) {
-        const tracks = video.srcObject.getVideoTracks();
+        const tracks = /** @type {MediaStream} */ (video.srcObject).getVideoTracks();
         for (const track of tracks) {
             if (typeof track.getCapabilities === 'function') {
                 const caps = track.getCapabilities();
@@ -1373,7 +1381,8 @@ async function captureAndAnalyze() {
         clearTimeout(timeoutId);
         if (analyzeAbortController === controller) analyzeAbortController = null;
         // ANALYZING状態のままの場合のみ後続処理を実行
-        if (scanState === ScanState.ANALYZING) {
+        // （型の絞り込みは transitionTo() による変更を追えないため、ここで状態の型に戻す）
+        if (/** @type {ScanStateValue} */ (scanState) === ScanState.ANALYZING) {
             if (_pendingDuplicatePause && wasStreamingScan) {
                 // 【分岐1】重複停止
                 transitionTo(ScanState.SCANNING);
@@ -1847,7 +1856,7 @@ function restoreWakeLockSetting() {
     // デフォルトは有効 (true)
     isWakeLockEnabled = saved !== '0';
 
-    const chk = document.getElementById('chk-wake-lock');
+    const chk = /** @type {HTMLInputElement | null} */ (document.getElementById('chk-wake-lock'));
     if (chk) chk.checked = isWakeLockEnabled;
 
     // スキャン中なら状態を即時反映
@@ -1871,10 +1880,10 @@ async function init() {
     const lang = detectLanguage();
     await loadLocale(lang);
     // ─── DOM要素の取得（DOMContentLoaded 保証下で安全に取得） ──
-    videoContainer = document.querySelector('.video-container');
-    video = document.getElementById('video-feed');
-    canvas = document.getElementById('capture-canvas');
-    overlayCanvas = document.getElementById('overlay-canvas');
+    videoContainer = /** @type {HTMLElement} */ (document.querySelector('.video-container'));
+    video = /** @type {HTMLVideoElement} */ (document.getElementById('video-feed'));
+    canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('capture-canvas'));
+    overlayCanvas = /** @type {HTMLCanvasElement} */ (document.getElementById('overlay-canvas'));
     resultList = document.getElementById('result-list');
     btnScan = document.getElementById('btn-scan');
     statusDot = document.getElementById('status-dot');
@@ -1884,7 +1893,7 @@ async function init() {
     btnProxy = document.getElementById('btn-proxy');
     apiCounter = document.getElementById('api-counter');
     dupSkipBadge = document.getElementById('dup-skip-badge');
-    cameraSelector = document.getElementById('camera-selector');
+    cameraSelector = /** @type {HTMLSelectElement} */ (document.getElementById('camera-selector'));
     btnCamera = document.getElementById('btn-camera');
     btnFile = document.getElementById('btn-file');
     btnFlipCam = document.getElementById('btn-flip-cam');
@@ -1926,7 +1935,7 @@ async function init() {
 
     // ─── イベントリスナー登録（全要素にnullガード付き） ──
     if (btnCamera) btnCamera.addEventListener('click', () => switchSource('camera'));
-    if (cameraSelector) cameraSelector.addEventListener('change', (e) => switchCameraDevice(e.target.value));
+    if (cameraSelector) cameraSelector.addEventListener('change', () => switchCameraDevice(cameraSelector.value));
     if (btnFile && fileInput) btnFile.addEventListener('click', () => fileInput.click());
     if (fileInput) fileInput.addEventListener('change', handleFileUpload);
     if (btnFlipCam) btnFlipCam.addEventListener('click', toggleFacingMode);
@@ -1987,7 +1996,7 @@ async function init() {
         // ポップアップ外をクリックで閉じる
         document.addEventListener('click', (e) => {
             if (!helpPopup.classList.contains('hidden')
-                && !helpPopup.contains(e.target)
+                && !helpPopup.contains(/** @type {Node} */ (e.target))
                 && e.target !== btnHelp) {
                 helpPopup.classList.add('hidden');
             }
@@ -2001,7 +2010,7 @@ async function init() {
     }
 
     // 重複スキップ回数スライダー
-    const dupSlider = document.getElementById('duplicate-skip-count');
+    const dupSlider = /** @type {HTMLInputElement | null} */ (document.getElementById('duplicate-skip-count'));
     const dupValue = document.getElementById('duplicate-skip-value');
     if (dupSlider) {
         // localStorageから保存値を復元
@@ -2010,16 +2019,16 @@ async function init() {
             const parsed = parseInt(saved, 10);
             if (parsed >= 1 && parsed <= 5) {
                 DUPLICATE_SKIP_COUNT = parsed;
-                dupSlider.value = parsed;
+                dupSlider.value = String(parsed);
             }
         }
         if (dupValue) dupValue.textContent = t('help.dupSkipUnit', { count: DUPLICATE_SKIP_COUNT });
 
-        dupSlider.addEventListener('input', (e) => {
-            const val = parseInt(e.target.value, 10);
+        dupSlider.addEventListener('input', () => {
+            const val = parseInt(dupSlider.value, 10);
             DUPLICATE_SKIP_COUNT = val;
             if (dupValue) dupValue.textContent = t('help.dupSkipUnit', { count: val });
-            localStorage.setItem('duplicateSkipCount', val);
+            localStorage.setItem('duplicateSkipCount', String(val));
             // 変更時に重複状態をリセット（新しい閾値を即座に反映）
             if (scanState === ScanState.PAUSED_DUPLICATE) {
                 transitionTo(ScanState.SCANNING);
@@ -2031,10 +2040,10 @@ async function init() {
     }
 
     // 画面スリープ防止チェックボックス
-    const chkWakeLock = document.getElementById('chk-wake-lock');
+    const chkWakeLock = /** @type {HTMLInputElement | null} */ (document.getElementById('chk-wake-lock'));
     if (chkWakeLock) {
-        chkWakeLock.addEventListener('change', (e) => {
-            isWakeLockEnabled = e.target.checked;
+        chkWakeLock.addEventListener('change', () => {
+            isWakeLockEnabled = chkWakeLock.checked;
             localStorage.setItem('visionWakeLock', isWakeLockEnabled ? '1' : '0');
             // 設定変更を即時反映
             if (isWakeLockEnabled) {

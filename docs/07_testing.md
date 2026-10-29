@@ -76,6 +76,17 @@ pytest tests/test_api.py::TestInvalidInput::test_不正なモードを拒否す�
 pytest tests/ -v --cov=. --cov-report=html
 ```
 
+### フロントエンド（static/ の JS）の確認
+
+Node.js 22 以上が必要です（アプリの実行には使いません）。
+
+```bash
+npm ci              # package-lock.json の版で道具を入れる
+npm run check       # 型チェック（tsc）
+```
+
+型チェックは `static/script.js` 先頭の `// @ts-check` と `jsconfig.json` で有効にしています。DOM 要素の変数には JSDoc で型を付けているので、要素の取り違え（例：`<input>` でない要素の `.value`）もここで見つかります。
+
 ---
 
 ## テストクラス一覧
