@@ -2,6 +2,9 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Vision AI Scanner - フロントエンドスクリプト
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 判断の処理（状態遷移・類似度・再試行の待ち時間・結果の指紋）は scan_core.js（先に読み込む）にある
+
+/* global ScanState, canTransition, compareImageHash, calcRetryDelay, computeResultFingerprint, isValidResult */
 
 // ─── i18n（国際化） ──────────────────────────────────
 let _i18nMessages = {};
@@ -122,10 +125,7 @@ const MOTION_CANVAS_HEIGHT = 48;     // モーション検出用キャンバス�
 const CAMERA_WIDTH = 1280;           // カメラ解像度（幅）
 const CAMERA_HEIGHT = 720;           // カメラ解像度（高さ）
 const JPEG_QUALITY = 0.95;           // キャプチャ画質
-const MIN_RESULT_LENGTH = 5;         // 結果フィルター: 最小文字数
 const LABEL_MAX_LENGTH = 25;         // バウンディングボックスのラベル最大文字数
-const RETRY_BASE_DELAY_MS = 5000;    // リトライ初回待機時間（指数バックオフ基底）
-const RETRY_MAX_DELAY_MS = 60000;    // リトライ最大待機時間（60秒）
 const CAPTURE_RESET_DELAY_MS = 3000;       // 撮影完了後のバーリセット遅延（ミリ秒）
 const LABEL_CAPTURE_RESET_DELAY_MS = 3000; // ラベルモード: 次のスキャンまでの待機（ミリ秒）
 const CONTINUOUS_SCAN_INTERVAL_MS = 3000;  // 連続スキャンモードのインターバル（ミリ秒）
@@ -137,25 +137,7 @@ const FETCH_TIMEOUT_MS = 20000;      // fetch タイムアウト（バックエ�
 const MAX_UPLOAD_SIZE = 5 * 1024 * 1024;  // アップロード上限（5MB、サーバー側と一致）
 let DUPLICATE_SKIP_COUNT = 2;        // 同じ結果がN回連続したらカメラ移動まで一時停止（UI設定で変更可）
 
-// ─── スキャン状態機械 ──────────────────────────────
-const ScanState = Object.freeze({
-    IDLE:              'IDLE',              // 待機中
-    SCANNING:          'SCANNING',          // フレーム監視中
-    ANALYZING:         'ANALYZING',         // API送信中
-    PAUSED_ERROR:      'PAUSED_ERROR',      // エラー一時停止
-    PAUSED_DUPLICATE:  'PAUSED_DUPLICATE',  // 重複検出で一時停止
-    COOLDOWN:          'COOLDOWN',          // レート制限待機
-});
-/** @typedef {typeof ScanState[keyof typeof ScanState]} ScanStateValue スキャン状態の値 */
-
-const SCAN_TRANSITIONS = Object.freeze({
-    IDLE:              ['SCANNING'],
-    SCANNING:          ['IDLE', 'ANALYZING', 'PAUSED_DUPLICATE'],
-    ANALYZING:         ['IDLE', 'SCANNING', 'PAUSED_ERROR', 'PAUSED_DUPLICATE', 'COOLDOWN'],
-    PAUSED_ERROR:      ['IDLE', 'SCANNING'],
-    PAUSED_DUPLICATE:  ['IDLE', 'SCANNING'],
-    COOLDOWN:          ['IDLE', 'SCANNING'],
-});
+// スキャン状態機械（ScanState・遷移表）と判断の処理は scan_core.js にある
 
 // モードごとのバウンディングボックス色設定
 const MODE_BOX_CONFIG = {
@@ -273,21 +255,6 @@ function computeImageHash(srcCanvas) {
     return gray;
 }
 
-/**
- * 2つの画像ハッシュの類似度を計算する（0.0〜1.0）。
- * @param {Uint8Array} hashA
- * @param {Uint8Array} hashB
- * @returns {number} 類似度（1.0=完全一致）
- */
-function compareImageHash(hashA, hashB) {
-    if (!hashA || !hashB || hashA.length !== hashB.length) return 0;
-    let totalDiff = 0;
-    for (let i = 0; i < hashA.length; i++) {
-        totalDiff += Math.abs(hashA[i] - hashB[i]);
-    }
-    return 1 - totalDiff / (hashA.length * 255);
-}
-
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 状態遷移・UI同期
@@ -300,8 +267,7 @@ function compareImageHash(hashA, hashB) {
  */
 function transitionTo(newState) {
     if (scanState === newState) return true;
-    const allowed = SCAN_TRANSITIONS[scanState];
-    if (!allowed || !allowed.includes(newState)) {
+    if (!canTransition(scanState, newState)) {
         console.warn(`不正な状態遷移: ${scanState} → ${newState}`);
         return false;
     }
@@ -1302,7 +1268,7 @@ async function captureAndAnalyze() {
             saveApiUsage();
 
             // 改善された重複検出
-            const fingerprint = computeResultFingerprint(result);
+            const fingerprint = computeResultFingerprint(result, currentMode);
             if (fingerprint && fingerprint === lastResultFingerprint) {
                 duplicateCount++;
                 if (duplicateCount >= DUPLICATE_SKIP_COUNT) {
@@ -1346,7 +1312,7 @@ async function captureAndAnalyze() {
         } else if (result.ok && result.data && result.data.length > 0) {
             drawBoundingBoxes(result.data, result.image_size);
             result.data
-                .filter(isValidResult)
+                .filter(item => isValidResult(item, currentMode))
                 .forEach(addResultItem);
         } else if (!result.ok) {
             const errorMsg = result.message || t('error.serverError', { status: result.error_code });
@@ -1425,12 +1391,7 @@ function scheduleRetry() {
     if (retryTimerId) clearTimeout(retryTimerId);
 
     consecutiveErrorCount++;
-    // 指数バックオフ + ジッター: BASE × 2^(n-1) × [0.75, 1.25]
-    const jitter = 0.75 + Math.random() * 0.5;
-    const delay = Math.min(
-        RETRY_BASE_DELAY_MS * Math.pow(2, consecutiveErrorCount - 1) * jitter,
-        RETRY_MAX_DELAY_MS
-    );
+    const delay = calcRetryDelay(consecutiveErrorCount, Math.random());
     const delaySec = Math.ceil(delay / 1000);
 
     if (statusText) statusText.textContent = t('scan.retryIn', { seconds: delaySec });
@@ -1448,44 +1409,8 @@ function scheduleRetry() {
 
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 重複結果検出
+// 重複結果検出（結果の指紋は scan_core.js の computeResultFingerprint）
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-/**
- * API結果の「指紋」を生成する。同じ被写体なら同じ文字列を返す。
- * 結果が空やエラーの場合は null を返す（重複カウントしない）。
- * @param {Object} result - APIレスポンス
- * @returns {string|null} 結果の指紋文字列
- */
-function computeResultFingerprint(result) {
-    if (!result.ok) return null;
-
-    // Web検索モード: best_guess をキーにする
-    if (currentMode === 'web') {
-        const detail = result.web_detail || {};
-        return detail.best_guess || null;
-    }
-
-    // ラベル判定モード: OK/NG + 理由
-    if (currentMode === 'label') {
-        return `label:${result.label_detected}:${result.label_reason || ''}`;
-    }
-
-    // 共通: data 配列からラベルを抽出してソート結合
-    if (!result.data || result.data.length === 0) return null;
-    const labels = result.data
-        .map(item => {
-            let label = (item.label || '').trim();
-            // 確信度部分を除去（"Apple - 95%" → "Apple"）
-            label = label.replace(/\s*[-–]\s*\d+%\s*$/, '');
-            return label.toLowerCase();
-        })
-        .filter(l => l.length > 0)
-        .sort();
-    if (labels.length === 0) return null;
-    // 検出数プレフィックス + ラベル一覧で指紋を構成
-    return `n${labels.length}:${labels.join('|')}`;
-}
 
 /**
  * 重複スキップバッジの表示を更新する。
@@ -1537,17 +1462,6 @@ function _createTimestampSpan() {
     timeSpan.className = 'timestamp';
     timeSpan.textContent = `[${new Date().toLocaleTimeString()}]`;
     return timeSpan;
-}
-
-/** ノイズや短すぎる結果を除外するフィルター。 */
-function isValidResult(item) {
-    const text = item.label || '';
-    const cleaned = text.trim();
-    // スコア付きラベルのモードは最小文字数フィルターをスキップ
-    if (['object', 'face', 'logo'].includes(currentMode)) return cleaned.length > 0;
-    if (cleaned.length < MIN_RESULT_LENGTH) return false;
-    if (cleaned.startsWith('www.') || cleaned.startsWith('http')) return false;
-    return true;
 }
 
 /** 検出結果をタイムスタンプ付きで結果リストに追加する。 */

@@ -13,4 +13,13 @@ export default [
             globals: globals.browser,
         },
     },
+    {
+        // static/ の JS の単体テスト（node --test で実行）
+        files: ['tests/js/**/*.js'],
+        languageOptions: {
+            ecmaVersion: 2022,
+            sourceType: 'commonjs',
+            globals: globals.node,
+        },
+    },
 ];

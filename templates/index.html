@@ -169,6 +169,8 @@
         </div>
     </div>
 
+    <!-- scan_core.js（判断の処理）を先に読み込む。script.js はここで宣言された名前を使う -->
+    <script src="{{ url_for('static', filename='scan_core.js') }}?v={{ static_hash('scan_core.js') }}"></script>
     <script src="{{ url_for('static', filename='script.js') }}?v={{ static_hash('script.js') }}"></script>
 </body>
 

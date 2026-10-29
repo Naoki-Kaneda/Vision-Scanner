@@ -86,3 +86,6 @@ jobs:
 
       - name: JS リンター（ESLint）
         run: npm run lint
+
+      - name: JS 単体テスト（node --test）
+        run: npm test

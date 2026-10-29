@@ -58,6 +58,7 @@ pip-audit
 npm ci
 npm run check       # 型チェック（tsc。script.js 先頭の // @ts-check と jsconfig.json）
 npm run lint        # リンター（ESLint、eslint.config.mjs）
+npm test            # 単体テスト（tests/js/、node --test）
 ```
 
 **依存ファイルの使い分け:**
@@ -74,6 +75,8 @@ pip-compile requirements.in -o requirements-lock.txt --strip-extras --no-header
 
 # requirements.txt も requirements.in の変更に合わせて手動更新
 # （Renderが requirements.txt を直接参照するため）
+# requirements.txt は直接依存だけを固定しているので、間接依存（Werkzeug・Jinja2等）の版は
+# CI（requirements-lock.txt）と本番（Render）で一致しないことがある
 
 # 開発依存は requirements-dev.in を編集したら requirements-dev.txt の版も手で合わせる
 ```
@@ -137,6 +140,7 @@ pip-compile requirements.in -o requirements-lock.txt --strip-extras --no-header
 ### フロントエンド（バニラJS — フレームワーク不使用）
 
 - **`static/script.js`**: カメラ制御、フレーム間差分による静止検知（`requestAnimationFrame`ループ）、ターゲットボックス内クロップ→Base64化→`/api/analyze`へPOST。API使用量はlocalStorageで日次管理。イベントハンドラは`init()`内で`addEventListener`登録（CSP準拠）。
+- **`static/scan_core.js`**: 画面に触れない判断の処理（`ScanState`と遷移表、`canTransition` / `compareImageHash` / `calcRetryDelay` / `computeResultFingerprint` / `isValidResult`）。import/exportを使わない通常のスクリプトで、`index.html`で`script.js`より先に読み込み、`script.js`はここで宣言した名前をそのまま使う（ビルド無しでCSP `script-src 'self'`のまま動かすため）。`module.exports`を足すとtscがモジュール扱いにしてscript.jsから名前が見えなくなるので足さない。テストは`tests/js/`がnodeの`vm`で読み込む。名前を足したら`scan_core.js`の`/* exported */`と`script.js`の`/* global */`も更新する
 - **`templates/index.html`**: Jinja2テンプレート。CSPノンスを`{{ csp_nonce }}`で受け渡し。
 - **`static/style.css`**: Glassmorphism風ダークテーマ。CSS変数でデザイントークン管理。
 - **`static/locales/`**: i18n用翻訳リソース（`ja.json`等）。script.jsの`t()`関数で参照。
@@ -156,7 +160,7 @@ pip-compile requirements.in -o requirements-lock.txt --strip-extras --no-header
 
 ### CI/CD
 
-- `.github/workflows/ci.yml`: `test` ジョブ＝pytest（Python 3.11/3.12/3.13） + ruff + mypy + bandit + pip-audit + osv-scanner + detect-secrets、`frontend` ジョブ＝JSの型チェック + ESLint
+- `.github/workflows/ci.yml`: `test` ジョブ＝pytest（Python 3.11/3.12/3.13） + ruff + mypy + bandit + pip-audit + osv-scanner + detect-secrets、`frontend` ジョブ＝JSの型チェック + ESLint + 単体テスト
 - `.github/workflows/secrets-scan.yml`: 毎週月曜にシークレットスキャン。検出時はGitHub Issue自動作成
 - `.github/dependabot.yml`: pip・npm依存+GitHub Actions週次チェック
 - Renderへの自動デプロイ: mainブランチへのpushで `gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 30` が起動
@@ -175,6 +179,7 @@ pip-compile requirements.in -o requirements-lock.txt --strip-extras --no-header
 - `tests/test_pii_mask.py`: PIIマスキングの単体テスト（電話番号/メール/クレジットカード/マイナンバー風パターン、None・空文字列のエッジケース）
 - `tests/e2e/conftest.py`: Playwrightフィクスチャ。Flaskをバックグラウンドスレッドでポート5099に起動し、ヘッドレスChromium（`locale="ja-JP"`固定）で接続
 - `tests/e2e/test_ui.py`: Playwright E2Eテスト（ページ読み込み、モード切替、エラー表示、設定API反映検証、ヘルプポップアップ開閉、重複スキップスライダー）
+- `tests/js/scan_core.test.js`: `static/scan_core.js`の単体テスト（状態遷移の可否、画像ハッシュの類似度、再試行の待ち時間、結果の指紋、表示する結果の判定）。`npm test`で実行
 
 **テスト作成時の注意:**
 - 新しいテストは既存の`client`フィクスチャを使用すること（レート制限が自動リセットされる）
@@ -182,6 +187,7 @@ pip-compile requirements.in -o requirements-lock.txt --strip-extras --no-header
 - Vision APIの呼び出しは `unittest.mock.patch` で `requests.Session.post` をモックする
 - E2Eテストはruffの対象外（`pyproject.toml`で`tests/e2e/*`を除外）
 - mypyのスタブなしライブラリ（cachetools, PIL, dotenv, gunicorn）は`ignore_missing_imports`設定済み
+- E2Eはポート5099固定で、2つの作業フォルダで同時に走らせると衝突する。Playwrightの起動が遅いPCでは全体で15分以上かかるので、UIを変えたとき以外は`pytest tests/ --ignore=tests/e2e`と`npm test`を先に走らせる
 
 ## 重要な設計パターン
 

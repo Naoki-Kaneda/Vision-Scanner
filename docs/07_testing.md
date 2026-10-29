@@ -84,7 +84,10 @@ Node.js 22 以上が必要です（アプリの実行には使いません）。
 npm ci              # package-lock.json の版で道具を入れる
 npm run check       # 型チェック（tsc）
 npm run lint        # リンター（ESLint、eslint.config.mjs）
+npm test            # 単体テスト（tests/js/*.test.js、node --test）
 ```
+
+`tests/js/scan_core.test.js` は `static/scan_core.js`（状態遷移の可否・画像ハッシュの類似度・再試行の待ち時間・結果の指紋・表示する結果の判定）を試します。`scan_core.js` は import/export を使わない通常のスクリプトなので、テストは node の `vm` で読み込み、末尾に置いた式の値で関数を受け取ります。本番のファイルにテストのための書き足しはしていません。
 
 型チェックは `static/script.js` 先頭の `// @ts-check` と `jsconfig.json` で有効にしています。DOM 要素の変数には JSDoc で型を付けているので、要素の取り違え（例：`<input>` でない要素の `.value`）もここで見つかります。
 
