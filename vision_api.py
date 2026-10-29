@@ -19,6 +19,8 @@ import urllib3
 from dotenv import load_dotenv
 from PIL import Image, ImageEnhance
 
+from pii_mask import format_log_event
+
 from vision_types import (
     BoundingBox,
     ClassifyDataItem,
@@ -281,30 +283,33 @@ def _call_vision_api(payload: dict[str, Any], request_id: str, mode: str) -> Vis
         api_headers = {"x-goog-api-key": API_KEY}
         response = session.post(API_BASE_URL, json=payload, headers=api_headers, timeout=API_TIMEOUT_SECONDS)
     except requests.exceptions.Timeout:
-        logger.error("[%s] Vision API タイムアウト (mode=%s)", request_id, mode)
+        logger.error(format_log_event("vision_timeout", request_id, mode=mode))
         return _make_error(ERR_TIMEOUT, "APIリクエストがタイムアウトしました")
     except requests.exceptions.ConnectionError as e:
-        logger.error("[%s] Vision API 接続エラー (mode=%s): %s", request_id, mode, e)
+        logger.error(format_log_event("vision_connection_error", request_id, mode=mode, error=str(e)))
         return _make_error(ERR_CONNECTION_ERROR, "API接続に失敗しました")
     except requests.exceptions.RequestException as e:
-        logger.error("[%s] Vision API通信エラー (mode=%s): %s", request_id, mode, e)
+        logger.error(format_log_event("vision_request_error", request_id, mode=mode, error=str(e)))
         return _make_error(ERR_REQUEST_ERROR, str(e))
 
     if response.status_code != 200:
-        logger.error("[%s] APIエラー (mode=%s, ステータス %d): %.500s", request_id, mode, response.status_code, response.text)
+        # 応答本文は500文字に制限し、PIIマスクを通す
+        logger.error(format_log_event("vision_http_error", request_id, mode=mode,
+                                      status=response.status_code, body=response.text[:500]))
         return _make_error(f"API_{response.status_code}", f"Vision APIエラー (ステータス {response.status_code})")
 
     try:
         result = response.json()
     except (ValueError, TypeError) as parse_err:
         content_type = response.headers.get("Content-Type", "不明")
-        logger.error("[%s] APIレスポンスのJSONパースに失敗 (mode=%s, content-type=%s): %s (先頭200文字: %.200s)",
-                     request_id, mode, content_type, parse_err, response.text)
+        logger.error(format_log_event("vision_parse_error", request_id, mode=mode, content_type=content_type,
+                                      error=str(parse_err), body=response.text[:200]))
         error_code = ERR_API_RESPONSE_NOT_JSON if "json" not in content_type.lower() else ERR_PARSE_ERROR
         return _make_error(error_code, f"APIレスポンスの解析に失敗しました (Content-Type: {content_type})")
 
     responses = result.get("responses", [])
-    logger.info("Vision API レスポンス keys: %s", list(responses[0].keys()) if responses else "empty")
+    logger.info(format_log_event("vision_response", request_id, mode=mode,
+                                 keys=list(responses[0].keys()) if responses else "empty"))
     if not responses:
         return _make_success([])
 
@@ -325,7 +330,7 @@ def _check_partial_error(response_item: dict[str, Any], request_id: str, mode: s
         return None, None, None
     code = partial_error.get("code", "UNKNOWN")
     msg = partial_error.get("message", "Vision API 内部エラー")
-    logger.warning("[%s] Vision API 部分エラー (mode=%s, code=%s): %s", request_id, mode, code, msg)
+    logger.warning(format_log_event("vision_partial_error", request_id, mode=mode, code=code, error=msg))
     return [f"VISION_{code}: {msg}"], f"VISION_{code}", msg
 
 
@@ -338,46 +343,49 @@ def _partial_error_or_success(data: list[DataItem], partial_warnings: list[str] 
 
 
 # ─── モード別パース分岐 ──────────────────────────────
-def _dispatch_parse(mode: str, response_item: dict[str, Any], image_b64: str) -> tuple[list[DataItem], list[int] | None, dict[str, Any]]:
+def _dispatch_parse(mode: str, response_item: dict[str, Any], image_b64: str,
+                    request_id: str = "") -> tuple[list[DataItem], list[int] | None, dict[str, Any]]:
     """
     モードに応じてレスポンスをパースし、(data, image_size, extra_kwargs) を返す。
     extra_kwargs はモード固有フィールド（label_detected, web_detail等）。
     """
     if mode == "text":
         text_data, image_size = _parse_text_response(response_item)
-        logger.info("テキスト検出結果: %d件, image_size=%s", len(text_data), image_size)
+        logger.info(format_log_event("vision_result", request_id, mode=mode, count=len(text_data), image_size=image_size))
         return text_data, image_size, {}  # type: ignore[return-value]
 
     if mode == "label":
         label_data, image_size, label_detected, label_reason = _parse_label_response(response_item)
-        logger.info("ラベル検出結果: detected=%s, reason=%s", label_detected, label_reason)
+        logger.info(format_log_event("vision_result", request_id, mode=mode,
+                                     detected=label_detected, reason=label_reason))
         return label_data, image_size, {"label_detected": label_detected, "label_reason": label_reason}  # type: ignore[return-value]
 
     if mode == "face":
         image_size = _get_image_dimensions(image_b64)
         face_data = _parse_face_response(response_item)
-        logger.info("顔検出結果: %d件, image_size=%s", len(face_data), image_size)
+        logger.info(format_log_event("vision_result", request_id, mode=mode, count=len(face_data), image_size=image_size))
         return face_data, image_size, {}  # type: ignore[return-value]
 
     if mode == "logo":
         image_size = _get_image_dimensions(image_b64)
         logo_data = _parse_logo_response(response_item)
-        logger.info("ロゴ検出結果: %d件, image_size=%s", len(logo_data), image_size)
+        logger.info(format_log_event("vision_result", request_id, mode=mode, count=len(logo_data), image_size=image_size))
         return logo_data, image_size, {}  # type: ignore[return-value]
 
     if mode == "classify":
         classify_data = _parse_classify_response(response_item)
-        logger.info("分類タグ結果: %d件", len(classify_data))
+        logger.info(format_log_event("vision_result", request_id, mode=mode, count=len(classify_data)))
         return classify_data, None, {}  # type: ignore[return-value]
 
     if mode == "web":
         web_data, web_detail = _parse_web_response(response_item)
-        logger.info("Web検索結果: entities=%d件", len(web_detail.get("entities", [])))
+        logger.info(format_log_event("vision_result", request_id, mode=mode,
+                                     entities=len(web_detail.get("entities", []))))
         return web_data, None, {"web_detail": web_detail}
 
     # object モード
     obj_data = _parse_object_response(response_item)
-    logger.info("物体検出結果: %d件", len(obj_data))
+    logger.info(format_log_event("vision_result", request_id, mode=mode, count=len(obj_data)))
     return obj_data, None, {}  # type: ignore[return-value]
 
 
@@ -420,7 +428,8 @@ def detect_content(image_b64: str, mode: str = "text", request_id: str = "") -> 
         except ValueError:
             raise
         except Exception as e:
-            logger.warning("前処理をスキップ（画像強調のみ省略）: %s", e)
+            # 画像強調だけを省略して解析は続ける
+            logger.warning(format_log_event("preprocess_skipped", request_id, mode=mode, error=str(e)))
 
     # API呼び出し
     payload = _build_request_payload(image_b64, mode, features)
@@ -433,7 +442,7 @@ def detect_content(image_b64: str, mode: str = "text", request_id: str = "") -> 
     # パース分岐 + 部分エラー判定
     response_item = api_result
     partial_warnings, err_code, err_msg = _check_partial_error(response_item, request_id, mode)
-    data, image_size, extra = _dispatch_parse(mode, response_item, image_b64)
+    data, image_size, extra = _dispatch_parse(mode, response_item, image_b64, request_id)
     return _partial_error_or_success(data, partial_warnings, err_code, err_msg,
                                      image_size=image_size, **extra)
 

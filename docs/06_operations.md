@@ -168,6 +168,14 @@ curl -s https://your-app.onrender.com/readyz | python -m json.tool
 | `rate_limited` | INFO | レート制限に到達 | 頻発する場合は上限値の調整を検討 |
 | `validation_error` | WARNING | リクエストのバリデーション失敗 | 通常は不正なリクエスト。攻撃の可能性も考慮 |
 | `server_error` | ERROR | 予期しないサーバーエラー | スタックトレースを確認して修正 |
+| `vision_timeout` / `vision_connection_error` / `vision_request_error` | ERROR | Vision API へ届かなかった | ネットワーク・プロキシ設定を確認 |
+| `vision_http_error` | ERROR | Vision API が 200 以外を返した（`status`・`body` 先頭500文字） | 403 ならキー制限、429 なら Google 側の割り当てを確認 |
+| `vision_parse_error` | ERROR | Vision API の応答が JSON として読めない | `content_type` を確認。プロキシのエラーページが返っていることが多い |
+| `vision_partial_error` | WARNING | 応答の一部がエラー（`code`・`error`） | 画像の形式・サイズを確認 |
+| `preprocess_skipped` | WARNING | 画像強調を省略して解析を続けた | 頻発する場合は画像の形式を確認 |
+| `vision_result` | INFO | モードごとの検出件数 | 正常 |
+
+すべて `event=<名前> request_id=<相関ID> key=value ...` の1行で、文字列の値は PII マスク済みです（書式は `pii_mask.format_log_event()`）。
 
 ### 2-4. 相関 ID によるトレース
 

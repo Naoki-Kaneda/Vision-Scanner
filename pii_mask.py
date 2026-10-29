@@ -1,9 +1,11 @@
 """
 PIIマスキングユーティリティ。
 ログ出力前にテキスト中の個人情報（電話番号、メールアドレス、クレジットカード風番号）をマスクする。
+構造化ログの1行を組み立てる format_log_event() もここに置く（マスクを必ず通すため）。
 """
 
 import re
+from typing import Any
 
 # 電話番号パターン（日本形式: 090-1234-5678, 03-1234-5678, +81-90-1234-5678 等）
 _PHONE_PATTERNS = [
@@ -66,3 +68,25 @@ def mask_pii(text: str) -> str:
     result = _EMAIL_PATTERN.sub(r'\1***@\2', result)
 
     return result
+
+
+def format_log_event(event: str, request_id: str, **fields: Any) -> str:
+    """構造化ログの1行（`event=... request_id=... key=value ...`）を組み立てる。
+
+    app.py と vision_api.py のログ書式を揃え、`grep request_id=<ID>` で
+    1リクエストを端から端まで追えるようにする。文字列の値には mask_pii を適用する。
+
+    Args:
+        event: イベント名（例: "api_success", "vision_timeout"）
+        request_id: リクエスト相関ID（空なら "-"）
+        **fields: 追加の項目（出力順は引数の順）
+
+    Returns:
+        ログに出す1行の文字列
+    """
+    parts = [f"event={event}", f"request_id={request_id or '-'}"]
+    for key, value in fields.items():
+        if isinstance(value, str):
+            value = mask_pii(value)
+        parts.append(f"{key}={value}")
+    return " ".join(parts)

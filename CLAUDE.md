@@ -90,7 +90,7 @@ pip-compile requirements.in -o requirements-lock.txt --strip-extras --no-header
 - **`app.py`**: Flaskエントリーポイント。ルートハンドラは薄く保ち、ビジネスロジックは`vision_api.py`に委譲。`before_request`で相関ID(`g.request_id`)とCSPノンス(`g.csp_nonce`)を生成。リクエストバリデーション（Base64検証、MIMEマジックバイト検証、サイズ上限5MB、モード列挙チェック）とIP単位レート制限を担当。
 - **`vision_api.py`**: Google Cloud Vision APIクライアント。`detect_content(image_b64, mode)`が単一エントリーポイント。テキストモードでは画像前処理（Pillow: コントラスト+シャープネス強調）を適用。`requests.Session`をモジュールレベルで共有し、リトライ戦略（3回、指数バックオフ、429/5xx再試行）を組み込み。APIキーは`x-goog-api-key`ヘッダーで送信（URLパラメータ不使用）。
 - **`rate_limiter.py`**: Redis接続時はLuaスクリプトで原子的操作（マルチプロセス安全）、未接続時はインメモリ(TTLCache)にフォールバック。公開API: `try_consume_request()` / `release_request()` / `get_daily_count()` / `get_backend_type()`。API失敗時は`release_request()`で予約を取り消し、ユーザーのクォータを消費しない。
-- **`pii_mask.py`**: ログ出力前のPII（個人情報）マスキング。電話番号・メールアドレス・クレジットカード・12桁連続数字を正規表現で検出し、部分マスクする。処理順はパターン競合を回避する順序。
+- **`pii_mask.py`**: ログ出力前のPII（個人情報）マスキングと、構造化ログ1行の組み立て（`format_log_event()`。app.py・vision_api.py 共通の `event=... request_id=...` 書式）。電話番号・メールアドレス・クレジットカード・12桁連続数字を正規表現で検出し、部分マスクする。処理順はパターン競合を回避する順序。
 - **`vision_types.py`**: TypedDictベースの型定義（VisionResponse, ConsumeResult, ProxyStatus等）。ファイル名は`_types.py`からリネーム済み（Python 3.14 CPython内部モジュール`_types`との衝突回避）。
 - **`translations.py`**: 物体検出ラベルの英日翻訳辞書（`_parse_object_response()`で使用）。`OBJECT_TRANSLATIONS` / `EMOTION_LIKELIHOOD` / `EMOTION_NAMES` / `LABEL_TRANSLATIONS` をエクスポート。
 
