@@ -155,7 +155,7 @@ curl -s https://your-app.onrender.com/readyz | python -m json.tool
 | `ADMIN_SECRET が未設定です。管理API（プロキシ設定変更）は常に403を返します。` | `ADMIN_SECRET` が空 | 中 | 管理 API を使わない場合は無視可。使う場合は設定必須 |
 | `ADMIN_SECRET が短すぎます（16文字以上を推奨）。` | 16 文字未満 | 高 | `secrets.token_urlsafe(32)` で再生成 |
 | `ADMIN_SECRET のエントロピーが低い可能性があります` | 文字種が 3 種類未満 | 高 | ランダム生成したシークレットに変更 |
-| `Redis接続失敗、インメモリにフォールバック: ...` | Redis に接続できない | 高（本番） | Redis の接続情報・稼働状態を確認 |
+| `Redis接続失敗、インメモリにフォールバック: ...` | Redis に接続できない。メッセージ中の接続 URL の認証情報は `redis://***` に伏せる | 高（本番） | Redis の接続情報・稼働状態を確認 |
 
 ### 2-3. 運用中に監視すべきログイベント
 
