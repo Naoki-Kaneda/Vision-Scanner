@@ -346,7 +346,7 @@ GitHub Actions を使った自動テスト・セキュリティチェックの�
 | 1. リポジトリのチェックアウト | `actions/checkout@v4` | ワークフロー全体が失敗 |
 | 2. Python セットアップ | `actions/setup-python@v5` | ワークフロー全体が失敗 |
 | 3. 依存関係インストール | `requirements-lock.txt` + `requirements-dev.txt` | 後続ステップが失敗 |
-| 4. シークレット検出 | `detect-secrets scan` でコード内のシークレット候補を検出 | 警告のみ（ワークフローは続行） |
+| 4. シークレット検出 | `.github/scripts/find_new_secrets.py` で全体を走査し、`.secrets.baseline` に無い新しい候補を数える | PR マージがブロックされる（新しい候補が1件でもあれば失敗） |
 | 5. Ruff リントチェック | コードスタイル・品質チェック | PR マージがブロックされる |
 | 6. Bandit セキュリティスキャン | Python コードのセキュリティ脆弱性を静的解析 | PR マージがブロックされる |
 | 7. pip-audit 脆弱性チェック | 依存ライブラリの既知の脆弱性を検出 | PR マージがブロックされる |
@@ -406,7 +406,7 @@ pre-commit install
 
 ### 6-4. ベースライン（`.secrets.baseline`）
 
-`detect-secrets` はベースラインに記録済みの候補（誤検知と判定したテスト用の値・文書の例）を無視し、新しい候補だけで止めます。ベースラインはコミット済みです。週次スキャン（`secrets-scan.yml`）も同じベースラインで既知の候補を除きます。
+`detect-secrets` はベースラインに記録済みの候補（誤検知と判定したテスト用の値・文書の例）を無視し、新しい候補だけで止めます。ベースラインはコミット済みです。CI（`ci.yml`）と週次スキャン（`secrets-scan.yml`）は、共通の `.github/scripts/find_new_secrets.py` で同じベースラインと照合します。照合はファイル名とハッシュで行い、行番号は見ません（pre-commit のフックは行番号まで照合するので、記録済みのファイルの行がずれると、ベースラインの更新を求めて止まります）。
 
 誤検知を新しく許可するときは、ベースラインを更新してコミットします。
 
@@ -418,7 +418,9 @@ detect-secrets scan --baseline .secrets.baseline --exclude-files '\.lock$|\.txt$
 detect-secrets audit .secrets.baseline
 ```
 
-Windows で更新するとファイル名の区切りが `\` になり、Linux で照合できなくなります。`/` にそろえてからコミットしてください。
+Windows で更新するとファイル名の区切りが `\` になります。CI と週次スキャンは区切りの違いを吸収しますが、pre-commit のフックは Linux で照合できなくなるので、`/` にそろえてからコミットしてください。
+
+テスト用の偽の値を1行だけ許可するなら、ベースラインを更新する代わりに、その行の末尾に `# pragma: allowlist secret` を付けても構いません（行がずれても効き、どの値を許可したかがコードで分かります）。
 
 ### 6-5. 手動でのフック実行
 

@@ -38,11 +38,11 @@ jobs:
         run: python -m playwright install --with-deps chromium
 
       - name: シークレット検出（detect-secrets）
+        # .secrets.baseline に無い新しい候補があれば失敗させる（detect-secrets は requirements-dev.txt で版を固定済み）
         run: |
-          pip install detect-secrets
-          # package-lock.json の整合性ハッシュは誤検知になるので除外する
-          detect-secrets scan --exclude-files '\.lock$|package-lock\.json$' > .secrets-ci.json
-          detect-secrets audit --report .secrets-ci.json || true
+          COUNT=$(python .github/scripts/find_new_secrets.py .secrets-ci.json)
+          echo "新しい候補の件数: $COUNT"
+          test "$COUNT" = "0"
 
       - name: Ruff リントチェック
         run: python -m ruff check .
