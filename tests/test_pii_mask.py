@@ -2,7 +2,7 @@
 PIIマスキングユーティリティのテスト。
 """
 
-from pii_mask import mask_pii
+from pii_mask import format_log_event, mask_pii
 
 
 class TestPhoneNumberMasking:
@@ -78,3 +78,19 @@ class TestEdgeCases:
         result = mask_pii(text)
         assert "1234-5678" not in result
         assert "taro@" not in result
+
+
+class TestFormatLogEvent:
+    """構造化ログ1行の組み立てテスト。"""
+
+    def test_イベント名と相関IDと項目をこの順で並べる(self):
+        line = format_log_event("vision_timeout", "abc123", mode="text", status=500)
+        assert line == "event=vision_timeout request_id=abc123 mode=text status=500"
+
+    def test_相関IDが空ならハイフンにする(self):
+        assert format_log_event("vision_timeout", "") == "event=vision_timeout request_id=-"
+
+    def test_文字列の値はPIIマスクを通す(self):
+        line = format_log_event("vision_http_error", "abc123", body="連絡先 090-1234-5678")
+        assert "1234-5678" not in line
+        assert "090-****-****" in line

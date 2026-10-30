@@ -40,7 +40,8 @@ jobs:
       - name: シークレット検出（detect-secrets）
         run: |
           pip install detect-secrets
-          detect-secrets scan --exclude-files '\.lock$' > .secrets-ci.json
+          # package-lock.json の整合性ハッシュは誤検知になるので除外する
+          detect-secrets scan --exclude-files '\.lock$|package-lock\.json$' > .secrets-ci.json
           detect-secrets audit --report .secrets-ci.json || true
 
       - name: Ruff リントチェック
@@ -65,3 +66,27 @@ jobs:
         env:
           VISION_API_KEY: "test-dummy-key"
         run: python -m pytest tests/ -v --tb=short
+
+  # static/ の JS を確かめる（アプリの実行に Node.js は使わない）
+  frontend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node.js セットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: 依存関係インストール
+        run: npm ci
+
+      - name: JS 型チェック（tsc）
+        run: npm run check
+
+      - name: JS リンター（ESLint）
+        run: npm run lint
+
+      - name: JS 単体テスト（node --test）
+        run: npm test

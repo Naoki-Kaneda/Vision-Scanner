@@ -1,5 +1,5 @@
 # 開発・テスト依存
-# pip-compile requirements-dev.in -o requirements-dev-lock.txt で lock ファイルを再生成
+# requirements-dev.txt は直接依存だけを手で書いている（多くは == で固定、一部は範囲指定）。ここを編集したら requirements-dev.txt も合わせる
 -r requirements.in
 pytest>=9,<10
 ruff>=0.9,<1
@@ -11,3 +11,5 @@ mypy>=1.13,<2
 types-requests>=2.32,<3
 types-cachetools>=5,<6
 types-redis>=4,<5
+pre-commit>=4,<5
+detect-secrets==1.5.0

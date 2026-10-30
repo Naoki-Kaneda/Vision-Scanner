@@ -131,10 +131,20 @@ curl -s https://your-app.onrender.com/readyz | python -m json.tool
 
 | 項目 | 設定値 |
 |------|--------|
-| ログレベル | `INFO`（デフォルト）。`FLASK_DEBUG=true` で `DEBUG` |
-| マスキング対象 | プロキシ URL 内の認証情報（`user:pass` → `***:***`） |
+| ログレベル | `INFO`（開発時は `app.py` の `basicConfig` で固定。gunicorn 配下では gunicorn のログ設定に従う。`FLASK_DEBUG` では変わらない） |
+| 出力先 | 標準出力のみ（ファイルには書かない）。下の表の場所で読む |
+| マスキング対象 | プロキシ URL 内の認証情報（`user:pass` → `***:***`）、構造化ログの文字列の値に含まれる PII（電話番号・メールアドレス・カード番号風・12桁の数字。`pii_mask.py`） |
 | API レスポンス最大文字数 | エラー時 500 文字に制限 |
 | 相関 ID | 全リクエストに `request_id` を付与（`X-Request-Id` ヘッダー + ログ） |
+
+ログの読み方は起動方法ごとに異なります。
+
+| 起動方法 | ログの場所 | 読み方 |
+|---------|-----------|--------|
+| Ubuntu（systemd、`deploy/setup-ubuntu.sh` で構築） | journald | `journalctl -u vision-scanner -f` |
+| Ubuntu（`nohup ./start.sh > app.log 2>&1 &`、README の手順） | リポジトリ直下の `app.log`（Git の追跡対象外） | `tail -f app.log` |
+| Windows（`start.bat` / `python app.py`） | 起動したコンソール | ファイルに残すなら `python app.py > app.log 2>&1` |
+| Render | Render ダッシュボードの Logs | ダッシュボードで閲覧 |
 
 ### 2-2. 起動時に確認すべき WARNING
 
@@ -158,6 +168,15 @@ curl -s https://your-app.onrender.com/readyz | python -m json.tool
 | `rate_limited` | INFO | レート制限に到達 | 頻発する場合は上限値の調整を検討 |
 | `validation_error` | WARNING | リクエストのバリデーション失敗 | 通常は不正なリクエスト。攻撃の可能性も考慮 |
 | `server_error` | ERROR | 予期しないサーバーエラー | スタックトレースを確認して修正 |
+| `vision_timeout` / `vision_connection_error` / `vision_request_error` | ERROR | Vision API へ届かなかった | ネットワーク・プロキシ設定を確認 |
+| `vision_http_error` | ERROR | Vision API が 200 以外を返した（`status`・`body` 先頭500文字） | 403 ならキー制限、429 なら Google 側の割り当てを確認 |
+| `vision_parse_error` | ERROR | Vision API の応答が JSON として読めない | `content_type` を確認。プロキシのエラーページが返っていることが多い |
+| `vision_partial_error` | WARNING | 応答の一部がエラー（`code`・`error`） | 画像の形式・サイズを確認 |
+| `preprocess_skipped` | WARNING | 画像強調を省略して解析を続けた | 頻発する場合は画像の形式を確認 |
+| `vision_response` | INFO | Vision API の応答に含まれていた項目名（`keys`） | 正常。結果が空のときの切り分けに使う |
+| `vision_result` | INFO | モードごとの検出件数 | 正常 |
+
+すべて `event=<名前> request_id=<相関ID> key=value ...` の1行で、文字列の値は PII マスク済みです（書式は `pii_mask.format_log_event()`）。
 
 ### 2-4. 相関 ID によるトレース
 
@@ -167,8 +186,10 @@ curl -s https://your-app.onrender.com/readyz | python -m json.tool
 - **サーバーログ側**: ログ内の `request_id=...` で検索
 
 ```bash
-# 特定リクエストのログを追跡
-grep "request_id=abc12345def67890" /var/log/app.log
+# 特定リクエストのログを追跡（systemd で動かしている場合）
+journalctl -u vision-scanner | grep "request_id=abc12345def67890"
+# nohup で app.log に出している場合
+grep "request_id=abc12345def67890" app.log
 ```
 
 ---
@@ -353,14 +374,19 @@ RATE_LIMIT_DAILY=500
 **仕組み:**
 
 1. `detect-secrets` でリポジトリ全体をスキャン
-2. シークレット候補が検出された場合、`security` ラベル付きの Issue を自動作成
-3. Issue にはファイル名・行番号・シークレットの種別が記載される
+2. `.secrets.baseline` に記録済み（誤検知と判定済み）の候補を除く
+3. 新しい候補が残った場合だけ、`security` ラベル付きの Issue を自動作成
+4. Issue にはファイル名・行番号・シークレットの種別が記載される
 
 **除外対象:**
 - `.lock` ファイル
-- `.secrets-baseline` ファイル
+- `.txt` ファイル（requirements*.txt 等。ベースライン作成時・pre-commit と同じ条件）
+- `.secrets.baseline` ファイル
+- `package-lock.json`（整合性ハッシュが誤検知されるため）
 - `venv/` ディレクトリ
 - `.venv/` ディレクトリ
+
+> GitHub は、公開リポジトリで 60 日間コミットが無いと定期実行（schedule）を自動で無効にします。Actions タブで「シークレット定期スキャン」が無効になっていたら、「Enable workflow」で有効に戻してください。
 
 ### 6-2. 手動スキャンの実行
 

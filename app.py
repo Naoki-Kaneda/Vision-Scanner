@@ -20,6 +20,7 @@ from flask import Flask, render_template, request, jsonify, g, Response as Flask
 from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
 from vision_api import detect_content, get_proxy_status, set_proxy_enabled, VALID_MODES, API_KEY
+from pii_mask import format_log_event
 from rate_limiter import (
     try_consume_request, release_request, RATE_LIMIT_DAILY,
     get_backend_type, REDIS_URL, seconds_until_midnight,
@@ -364,15 +365,8 @@ def handle_method_not_allowed(_e):
 
 def _log(level: str, event: str, **kwargs: Any) -> None:
     """構造化ログ出力（request-id自動付与、PII自動マスク）。"""
-    from pii_mask import mask_pii
     req_id = getattr(g, "request_id", "-")
-    parts = [f"event={event}", f"request_id={req_id}"]
-    for k, v in kwargs.items():
-        # 文字列値にPIIマスキングを適用
-        if isinstance(v, str):
-            v = mask_pii(v)
-        parts.append(f"{k}={v}")
-    getattr(logger, level)(" ".join(parts))
+    getattr(logger, level)(format_log_event(event, req_id, **kwargs))
 
 
 # ─── 画像フォーマット検証 ──────────────────────────

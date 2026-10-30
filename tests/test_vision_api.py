@@ -583,3 +583,29 @@ class TestWebParser:
         assert len(detail["pages"]) == 1
         assert len(detail["similar_images"]) == 1
         assert any("torque wrench" in d["label"] for d in data)
+
+
+# ─── ログの書式 ─────────────────────────────────
+class TestLogFormat:
+    """vision_api のログが app.py と同じ `event=... request_id=...` 書式で出ることのテスト。"""
+
+    @patch("vision_api.session.post")
+    def test_HTTPエラーのログは相関IDを持ち本文をマスクする(self, mock_post, caplog):
+        mock_post.return_value = make_mock_response(status_code=500)
+        mock_post.return_value.text = "error for taro@example.com"
+        from vision_api import detect_content
+        with caplog.at_level("ERROR", logger="vision_api"):
+            detect_content(make_b64(), mode="object", request_id="req-xyz")
+        line = next(r.getMessage() for r in caplog.records if "vision_http_error" in r.getMessage())
+        assert "request_id=req-xyz" in line
+        assert "status=500" in line
+        assert "taro@" not in line
+
+    @patch("vision_api.session.post")
+    def test_結果のログも相関IDを持つ(self, mock_post, caplog):
+        mock_post.return_value = make_mock_response(json_data={"responses": [{"localizedObjectAnnotations": []}]})
+        from vision_api import detect_content
+        with caplog.at_level("INFO", logger="vision_api"):
+            detect_content(make_b64(), mode="object", request_id="req-xyz")
+        messages = [r.getMessage() for r in caplog.records]
+        assert any(m.startswith("event=vision_result request_id=req-xyz mode=object") for m in messages)

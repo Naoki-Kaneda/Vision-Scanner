@@ -3,15 +3,31 @@
 
 # Python仮想環境
 venv/
+.venv/
+
+# Node.js（JSの型チェック・リンター・テスト用）
+node_modules/
 
 # キャッシュ
 __pycache__/
 *.pyc
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # IDE
 .vscode/
 .idea/
+
+# Claude Code の個人設定（共有する設定は .claude/settings.json に置く）
+.claude/settings.local.json
+
+# ログ（README の手順で nohup の出力先にする app.log 等）
+*.log
+
+# CI のシークレット検出が作る一時ファイル
+.secrets-ci.json
+.secrets-scan-result.json
 
 # SSL証明書（自己署名）
 certs/

@@ -9,7 +9,7 @@ Vision AI Scanner — カメラ映像からリアルタイムでテキスト抽�
 - **本番URL**: https://vision-scanner.onrender.com/
 - **ホスティング**: Render（`render.yaml` で構成）
 - **リポジトリ**: https://github.com/Naoki-Kaneda/Vision-Scanner.git
-- **Python**: 3.11+（CI: 3.11 / 3.12 / 3.13）
+- **Python**: 3.11+（CI: 3.11 / 3.12 / 3.13、Render: 3.12.0）
 
 ## 開発コマンド
 
@@ -24,8 +24,8 @@ pip install -r requirements-dev.txt
 # サーバー起動（http://localhost:5001 ※APP_PORTで変更可）
 python app.py
 # または起動スクリプト（Linux: HTTPS自動対応、Windows: HTTP）
-./start.sh          # Linux/Mac
-start.bat           # Windows
+./start.sh          # Linux/Mac（SSL証明書自動生成）
+start.bat           # Windows（HTTPのみ）
 
 # テスト実行
 pytest tests/ -v
@@ -33,6 +33,7 @@ pytest tests/ -v
 # 単一テストファイルの実行
 pytest tests/test_api.py -v
 pytest tests/test_vision_api.py -v
+pytest tests/test_pii_mask.py -v
 
 # 特定テストクラス/メソッドの実行
 pytest tests/test_api.py::TestInvalidInput -v
@@ -41,24 +42,30 @@ pytest tests/test_api.py::TestInvalidInput::test_不正なモードを拒否す�
 # E2Eテスト（Playwright必須、別途 playwright install chromium）
 pytest tests/e2e/ -v
 
-# リンター
+# リンター（E2Eテストは除外設定済み: pyproject.toml）
 ruff check .
 
 # 型チェック（mypy）
-mypy app.py vision_api.py rate_limiter.py pii_mask.py translations.py _types.py
+mypy app.py vision_api.py rate_limiter.py pii_mask.py translations.py vision_types.py
 
 # セキュリティスキャン
 bandit -r . --exclude ./tests,./venv,./.venv -q
 
 # 依存関係の脆弱性チェック
 pip-audit
+
+# フロントエンド（static/ の JS）の確認（Node.js 22以上。アプリの実行には不要）
+npm ci
+npm run check       # 型チェック（tsc。script.js 先頭の // @ts-check と jsconfig.json）
+npm run lint        # リンター（ESLint、eslint.config.mjs）
+npm test            # 単体テスト（tests/js/、node --test）
 ```
 
 **依存ファイルの使い分け:**
 - `requirements.in`: トップレベル本番依存（バージョン範囲指定、pip-compileの入力）
 - `requirements-dev.in`: トップレベル開発依存（pip-compileの入力）
 - `requirements.txt`: 本番依存のピン留め（Renderデプロイで使用）
-- `requirements-dev.txt`: 開発・テスト依存（pytest, ruff, bandit, pip-tools等）
+- `requirements-dev.txt`: 開発・テスト依存（pytest, ruff, bandit, pip-tools等）。直接依存だけを手で書く（多くは `==` で版固定、mypy・types-* 等は範囲指定。lockファイルは作っていない）
 - `requirements-lock.txt`: pip-compileで自動生成されたサブ依存込みのピン留め（CI使用）
 
 **依存管理ワークフロー（pip-tools）:**
@@ -68,9 +75,10 @@ pip-compile requirements.in -o requirements-lock.txt --strip-extras --no-header
 
 # requirements.txt も requirements.in の変更に合わせて手動更新
 # （Renderが requirements.txt を直接参照するため）
+# requirements.txt は直接依存だけを固定しているので、間接依存（Werkzeug・Jinja2等）の版は
+# CI（requirements-lock.txt）と本番（Render）で一致しないことがある
 
-# 開発依存のlock再生成
-pip-compile requirements-dev.in -o requirements-dev-lock.txt --strip-extras --no-header
+# 開発依存は requirements-dev.in を編集したら requirements-dev.txt の版も手で合わせる
 ```
 
 ## アーキテクチャ
@@ -86,6 +94,8 @@ pip-compile requirements-dev.in -o requirements-dev-lock.txt --strip-extras --no
 - **`app.py`**: Flaskエントリーポイント。ルートハンドラは薄く保ち、ビジネスロジックは`vision_api.py`に委譲。`before_request`で相関ID(`g.request_id`)とCSPノンス(`g.csp_nonce`)を生成。リクエストバリデーション（Base64検証、MIMEマジックバイト検証、サイズ上限5MB、モード列挙チェック）とIP単位レート制限を担当。
 - **`vision_api.py`**: Google Cloud Vision APIクライアント。`detect_content(image_b64, mode)`が単一エントリーポイント。テキストモードでは画像前処理（Pillow: コントラスト+シャープネス強調）を適用。`requests.Session`をモジュールレベルで共有し、リトライ戦略（3回、指数バックオフ、429/5xx再試行）を組み込み。APIキーは`x-goog-api-key`ヘッダーで送信（URLパラメータ不使用）。
 - **`rate_limiter.py`**: Redis接続時はLuaスクリプトで原子的操作（マルチプロセス安全）、未接続時はインメモリ(TTLCache)にフォールバック。公開API: `try_consume_request()` / `release_request()` / `get_daily_count()` / `get_backend_type()`。API失敗時は`release_request()`で予約を取り消し、ユーザーのクォータを消費しない。
+- **`pii_mask.py`**: ログ出力前のPII（個人情報）マスキングと、構造化ログ1行の組み立て（`format_log_event()`。app.py・vision_api.py 共通の `event=... request_id=...` 書式）。電話番号・メールアドレス・クレジットカード・12桁連続数字を正規表現で検出し、部分マスクする。処理順はパターン競合を回避する順序。
+- **`vision_types.py`**: TypedDictベースの型定義（VisionResponse, ConsumeResult, ProxyStatus等）。ファイル名は`_types.py`からリネーム済み（Python 3.14 CPython内部モジュール`_types`との衝突回避）。
 - **`translations.py`**: 物体検出ラベルの英日翻訳辞書（`_parse_object_response()`で使用）。`OBJECT_TRANSLATIONS` / `EMOTION_LIKELIHOOD` / `EMOTION_NAMES` / `LABEL_TRANSLATIONS` をエクスポート。
 
 ### APIエンドポイント一覧
@@ -100,6 +110,7 @@ pip-compile requirements-dev.in -o requirements-dev-lock.txt --strip-extras --no
 | `POST` | `/api/config/proxy` | 必須 | プロキシ設定更新（`X-Admin-Secret`ヘッダー） |
 | `GET` | `/healthz` | - | Liveness（プロセス生存確認） |
 | `GET` | `/readyz` | - | Readiness（API Key・Redis確認） |
+| `GET` | `/metrics` | - | Prometheus互換のメトリクス（リクエスト数・レート制限発動数・モード別件数。プロセスごとの値） |
 
 ### Vision API モード
 
@@ -129,8 +140,10 @@ pip-compile requirements-dev.in -o requirements-dev-lock.txt --strip-extras --no
 ### フロントエンド（バニラJS — フレームワーク不使用）
 
 - **`static/script.js`**: カメラ制御、フレーム間差分による静止検知（`requestAnimationFrame`ループ）、ターゲットボックス内クロップ→Base64化→`/api/analyze`へPOST。API使用量はlocalStorageで日次管理。イベントハンドラは`init()`内で`addEventListener`登録（CSP準拠）。
+- **`static/scan_core.js`**: 画面に触れない判断の処理（`ScanState`と遷移表、`canTransition` / `compareImageHash` / `calcRetryDelay` / `computeResultFingerprint` / `isValidResult`）。import/exportを使わない通常のスクリプトで、`index.html`で`script.js`より先に読み込み、`script.js`はここで宣言した名前をそのまま使う（ビルド無しでCSP `script-src 'self'`のまま動かすため）。`module.exports`を足すとtscがモジュール扱いにしてscript.jsから名前が見えなくなるので足さない。テストは`tests/js/`がnodeの`vm`で読み込む。名前を足したら`scan_core.js`の`/* exported */`と`script.js`の`/* global */`も更新する
 - **`templates/index.html`**: Jinja2テンプレート。CSPノンスを`{{ csp_nonce }}`で受け渡し。
 - **`static/style.css`**: Glassmorphism風ダークテーマ。CSS変数でデザイントークン管理。
+- **`static/locales/`**: i18n用翻訳リソース（`ja.json`等）。script.jsの`t()`関数で参照。
 
 ### セキュリティ構成
 
@@ -142,26 +155,39 @@ pip-compile requirements-dev.in -o requirements-dev-lock.txt --strip-extras --no
 - **レート制限**: Redis原子操作 or インメモリ二重構造（分間+日次）
 - **管理APIブルートフォース防御**: 5分間に5回認証失敗でIPブロック（429）
 - **Permissions-Policy**: `camera=(self), microphone=()`
+- **PIIマスキング**: ログ出力前に個人情報を自動マスク（`pii_mask.py`）
+- **pre-commitフック**: detect-secrets（シークレット検出）+ ruff（自動修正）。`pre-commit install` 後に`git commit`時に実行。既知の誤検知は`.secrets.baseline`に記録済み（ファイル名の区切りは`/`。Windowsで更新したら`/`にそろえる）
 
 ### CI/CD
 
-- `.github/workflows/ci.yml`: pytest（Python 3.11/3.12/3.13） + ruff + bandit + pip-audit + osv-scanner + detect-secrets
-- `.github/workflows/secrets-scan.yml`: シークレットスキャン
-- `.github/dependabot.yml`: pip依存+GitHub Actions週次チェック
+- `.github/workflows/ci.yml`: `test` ジョブ＝pytest（Python 3.11/3.12/3.13） + ruff + mypy + bandit + pip-audit + osv-scanner + detect-secrets、`frontend` ジョブ＝JSの型チェック + ESLint + 単体テスト
+- `.github/workflows/secrets-scan.yml`: 毎週月曜にシークレットスキャン。検出時はGitHub Issue自動作成
+- `.github/dependabot.yml`: pip・npm依存+GitHub Actions週次チェック
 - Renderへの自動デプロイ: mainブランチへのpushで `gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 30` が起動
+
+### デプロイ・運用ドキュメント
+
+- **`deploy/`**: Ubuntu初期構築スクリプト(`setup-ubuntu.sh`)、systemdサービス定義、Nginxリバースプロキシ設定
+- **`docs/`**: 要件定義・アーキテクチャ設計・API仕様・詳細設計・デプロイ手順・運用ガイド・テスト戦略（01〜09の連番）
 
 ## テスト構成
 
-- `tests/test_api.py`: Flaskテストクライアントを使用したAPIエンドポイントテスト（正常OCR / 物体検出 / 不正入力 / API障害 / セキュリティヘッダー / CORS / request-id / MIME検証 / レート制限設定API / ヘルスチェック / ProxyHopsパース）
-- `tests/test_vision_api.py`: `vision_api.py`の単体テスト（HTTPエラー、タイムアウト、部分エラー・部分成功、パーサー境界ケース、プロキシ状態4パターン回帰テスト、imageContext制限テスト）
-- `tests/e2e/test_ui.py`: Playwright E2Eテスト（ページ読み込み、モード切替、エラー表示、設定API反映検証）
 - `tests/conftest.py`: 共通フィクスチャ。`client`フィクスチャ＝Flaskテストクライアント + `reset_for_testing()`でレート制限ステートをリセット
 - `tests/helpers.py`: テスト用ヘルパー関数（`create_valid_image_base64` / `create_valid_png_base64` / `make_b64` / `make_mock_response`）
+- `tests/test_api.py`: Flaskテストクライアントを使用したAPIエンドポイントテスト（正常OCR / 物体検出 / 不正入力 / API障害 / セキュリティヘッダー / CORS / request-id / MIME検証 / レート制限設定API / ヘルスチェック / ProxyHopsパース）
+- `tests/test_vision_api.py`: `vision_api.py`の単体テスト（HTTPエラー、タイムアウト、部分エラー・部分成功、パーサー境界ケース、プロキシ状態4パターン回帰テスト、imageContext制限テスト）
+- `tests/test_pii_mask.py`: PIIマスキングの単体テスト（電話番号/メール/クレジットカード/マイナンバー風パターン、None・空文字列のエッジケース）
+- `tests/e2e/conftest.py`: Playwrightフィクスチャ。Flaskをバックグラウンドスレッドでポート5099に起動し、ヘッドレスChromium（`locale="ja-JP"`固定）で接続
+- `tests/e2e/test_ui.py`: Playwright E2Eテスト（ページ読み込み、モード切替、エラー表示、設定API反映検証、ヘルプポップアップ開閉、重複スキップスライダー）
+- `tests/js/scan_core.test.js`: `static/scan_core.js`の単体テスト（状態遷移の可否、画像ハッシュの類似度、再試行の待ち時間、結果の指紋、表示する結果の判定）。`npm test`で実行
 
 **テスト作成時の注意:**
 - 新しいテストは既存の`client`フィクスチャを使用すること（レート制限が自動リセットされる）
 - CIでは`VISION_API_KEY=test-dummy-key`で実行される（実APIは呼ばない）
 - Vision APIの呼び出しは `unittest.mock.patch` で `requests.Session.post` をモックする
+- E2Eテストはruffの対象外（`pyproject.toml`で`tests/e2e/*`を除外）
+- mypyのスタブなしライブラリ（cachetools, PIL, dotenv, gunicorn）は`ignore_missing_imports`設定済み
+- E2Eはポート5099固定で、2つの作業フォルダで同時に走らせると衝突する。Playwrightの起動が遅いPCでは全体で15分以上かかるので、UIを変えたとき以外は`pytest tests/ --ignore=tests/e2e`と`npm test`を先に走らせる
 
 ## 重要な設計パターン
 
@@ -200,6 +226,7 @@ API呼び出しが失敗した場合、`release_request()` で消費済みのク
 - コミット形式: `feat:` / `fix:` / `test:` / `refactor:` / `docs:` / `chore:` + 日本語メッセージ
 - コード内コメント・docstringは日本語
 - 変数名は英語（ローマ字禁止）
+- Python: PEP 8、`snake_case`（関数/変数）、`UPPER_SNAKE_CASE`（定数）。JavaScript: `camelCase`（関数/変数）、`UPPER_SNAKE_CASE`（定数）
 - テスト名は日本語可（例: `test_テキスト抽出が正常に動作する`）
 - XSS対策: フロントエンドでは`innerHTML`ではなくDOM操作（`textContent`/`createTextNode`）を使用
 - CSP対策: HTML inline属性（onclick, style）禁止 → JSイベントリスナー/CSSクラスを使用

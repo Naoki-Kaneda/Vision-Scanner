@@ -1,0 +1,19 @@
+{
+  "name": "vision-scanner-frontend-checks",
+  "private": true,
+  "description": "static/ の JS を確かめる道具（型チェック・リンター・単体テスト）。アプリの実行には Node.js は不要",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "check": "tsc -p jsconfig.json",
+    "lint": "eslint static tests/js",
+    "test": "node --test \"tests/js/*.test.js\""
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "eslint": "9.39.5",
+    "globals": "16.5.0",
+    "typescript": "5.6.3"
+  }
+}

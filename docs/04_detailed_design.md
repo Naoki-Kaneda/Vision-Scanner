@@ -21,6 +21,7 @@
 | レート制限 | `rate_limiter.py` | IP単位の分間/日次レート制限（Redis / インメモリ二重構造） |
 | 翻訳辞書 | `translations.py` | 物体検出ラベルの英日翻訳マッピング |
 | フロントエンド | `static/script.js` | カメラ制御、静止検知、画像クロップ、API通信、結果描画 |
+| フロントエンド（判断の処理） | `static/scan_core.js` | 状態遷移の可否、画像ハッシュの類似度、再試行の待ち時間、結果の指紋、表示する結果の判定（画面に触れない関数。`tests/js/` で単体テスト） |
 | スタイル | `static/style.css` | Glassmorphismダークテーマ、レスポンシブデザイン |
 | テンプレート | `templates/index.html` | Jinja2テンプレート、CSPノンス受け渡し |
 
@@ -437,6 +438,8 @@ IP単位の分間/日次レート制限を提供する。Redis接続時はLuaス
 ### 6.1 モジュール概要
 
 カメラ制御、静止検知、画像クロップ、API通信、結果描画を担当するフロントエンドスクリプト。フレームワーク不使用のバニラJavaScriptで実装。
+
+画面に触れない判断の処理（`ScanState` と遷移表、`canTransition` / `compareImageHash` / `calcRetryDelay` / `computeResultFingerprint` / `isValidResult`）は `static/scan_core.js` に分けている。どちらも import/export を使わない通常のスクリプトで、`index.html` で `scan_core.js` を先に読み込み、`script.js` はそこで宣言された名前をそのまま使う。
 
 ### 6.2 主要機能フロー
 
