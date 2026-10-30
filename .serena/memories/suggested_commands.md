@@ -1,0 +1,11 @@
+# Suggested commands (Windows)
+- Setup venv: `python -m venv venv`
+- Activate venv (PowerShell): `venv\Scripts\Activate.ps1`
+- Install deps: `pip install -r requirements.txt`
+- Run app: `python app.py`
+- Run tests: `pytest tests/ --ignore=tests/e2e`（E2E は遅いので UI を変えたときだけ `pytest tests/e2e/`）
+- JS checks: `npm run check` / `npm run lint` / `npm test`（初回は `npm ci`）
+- Quick file search: `rg -n "pattern"`
+- List files: `rg --files`
+- Git status: `git status --short`
+- Local start script: `start.bat`
