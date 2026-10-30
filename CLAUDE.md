@@ -168,7 +168,7 @@ pip-compile requirements.in -o requirements-lock.txt --strip-extras --no-header
 ### デプロイ・運用ドキュメント
 
 - **`deploy/`**: Ubuntu初期構築スクリプト(`setup-ubuntu.sh`)、systemdサービス定義、Nginxリバースプロキシ設定
-- **`docs/`**: 要件定義・アーキテクチャ設計・API仕様・詳細設計・デプロイ手順・運用ガイド・テスト戦略（01〜09の連番）
+- **`docs/`**: 要件定義・アーキテクチャ設計・API仕様・詳細設計・デプロイ手順・運用ガイド・テスト戦略（01〜07の連番）。計画・判断の経緯の記録は`docs/plans/`に日付付きで分け、今の仕様と混ぜない
 
 ## テスト構成
 
