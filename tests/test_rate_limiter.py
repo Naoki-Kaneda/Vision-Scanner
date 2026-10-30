@@ -13,7 +13,7 @@ class TestRedisFallbackLog:
     """Redis 接続失敗時のログのテスト。"""
 
     def test_接続失敗のログでRedisの認証情報を伏せる(self, monkeypatch, caplog):
-        url = "redis://user:s3cret-pass@redis.example.com:6379/0"
+        url = "redis://user:s3cret-pass@redis.example.com:6379/0"  # pragma: allowlist secret  # pragma: allowlist secret
         monkeypatch.setattr(rate_limiter, "REDIS_URL", url)
         monkeypatch.setattr(rate_limiter, "_backend", None)
         # redis の例外メッセージに接続 URL がそのまま入る場合を再現する。
