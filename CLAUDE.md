@@ -160,8 +160,8 @@ pip-compile requirements.in -o requirements-lock.txt --strip-extras --no-header
 
 ### CI/CD
 
-- `.github/workflows/ci.yml`: `test` ジョブ＝pytest（Python 3.11/3.12/3.13） + ruff + mypy + bandit + pip-audit + osv-scanner + detect-secrets、`frontend` ジョブ＝JSの型チェック + ESLint + 単体テスト
-- `.github/workflows/secrets-scan.yml`: 毎週月曜にシークレットスキャン。検出時はGitHub Issue自動作成
+- `.github/workflows/ci.yml`: `test` ジョブ＝pytest（Python 3.11/3.12/3.13） + ruff + mypy + bandit + pip-audit + osv-scanner + detect-secrets（`.secrets.baseline`に無い候補が出たら失敗）、`frontend` ジョブ＝JSの型チェック + ESLint + 単体テスト
+- `.github/workflows/secrets-scan.yml`: 毎週月曜にシークレットスキャン。除外条件とベースラインとの照合はCIと共通の`.github/scripts/find_new_secrets.py`（ファイル名とハッシュで照合し、行番号は見ない）。検出時はGitHub Issue自動作成
 - `.github/dependabot.yml`: pip・npm依存+GitHub Actions週次チェック
 - Renderへの自動デプロイ: mainブランチへのpushで `gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 30` が起動
 

@@ -373,12 +373,12 @@ RATE_LIMIT_DAILY=500
 
 **仕組み:**
 
-1. `detect-secrets` でリポジトリ全体をスキャン
-2. `.secrets.baseline` に記録済み（誤検知と判定済み）の候補を除く
+1. `.github/scripts/find_new_secrets.py` で、リポジトリ全体を `detect-secrets` でスキャン（PR の CI と同じスクリプト）
+2. `.secrets.baseline` に記録済み（誤検知と判定済み）の候補を、ファイル名とハッシュで照合して除く
 3. 新しい候補が残った場合だけ、`security` ラベル付きの Issue を自動作成
 4. Issue にはファイル名・行番号・シークレットの種別が記載される
 
-**除外対象:**
+**除外対象**（`find_new_secrets.py` の `EXCLUDE_FILES`）**:**
 - `.lock` ファイル
 - `.txt` ファイル（requirements*.txt 等。ベースライン作成時・pre-commit と同じ条件）
 - `.secrets.baseline` ファイル
@@ -406,10 +406,11 @@ Issue が作成された場合、以下の手順で対応します。
    - コードから削除し、環境変数に移行
    - Git 履歴にシークレットが残っている場合は `git filter-repo` で除去
 3. **誤検知の場合**:
-   - ベースラインを更新して今後の検出から除外
+   - ベースラインを更新して今後の検出から除外する（手順は [デプロイ手順書 6-4](05_deployment.md#6-4-ベースラインsecretsbaseline)）
    ```bash
-   detect-secrets scan --update .secrets.baseline
+   detect-secrets scan --baseline .secrets.baseline --exclude-files '\.lock$|\.txt$|package-lock\.json$'
    ```
+   - テスト用の偽の値なら、その行の末尾に `# pragma: allowlist secret` を付けてもよい
 
 ### 6-4. pre-commit との連携
 
