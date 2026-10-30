@@ -4,9 +4,9 @@ Flaskアプリをバックグラウンドスレッドで起動し、Playwright�
 """
 
 import threading
-import time
 
 import pytest
+from werkzeug.serving import make_server
 
 # Playwright未インストール時はE2Eテストを自動スキップ
 pytest.importorskip("playwright")
@@ -16,16 +16,14 @@ from app import app  # noqa: E402
 
 @pytest.fixture(scope="session")
 def live_server():
-    """Flaskアプリをテスト用ポートで起動するフィクスチャ。"""
-    port = 5099
-    server_thread = threading.Thread(
-        target=lambda: app.run(port=port, use_reloader=False),
-        daemon=True,
-    )
+    """Flaskアプリを空いているポートで起動するフィクスチャ。"""
+    # ポート0を渡すとOSが空いているポートを選ぶ。2つの作業フォルダで同時に走らせても衝突しない。
+    # make_server は待ち受けを始めてから戻るので、起動待ちは要らない
+    server = make_server("127.0.0.1", 0, app)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
-    # サーバー起動待ち
-    time.sleep(1.0)
-    yield f"http://127.0.0.1:{port}"
+    yield f"http://127.0.0.1:{server.server_port}"
+    server.shutdown()
 
 
 @pytest.fixture

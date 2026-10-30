@@ -177,7 +177,7 @@ pip-compile requirements.in -o requirements-lock.txt --strip-extras --no-header
 - `tests/test_api.py`: Flaskテストクライアントを使用したAPIエンドポイントテスト（正常OCR / 物体検出 / 不正入力 / API障害 / セキュリティヘッダー / CORS / request-id / MIME検証 / レート制限設定API / ヘルスチェック / ProxyHopsパース）
 - `tests/test_vision_api.py`: `vision_api.py`の単体テスト（HTTPエラー、タイムアウト、部分エラー・部分成功、パーサー境界ケース、プロキシ状態4パターン回帰テスト、imageContext制限テスト）
 - `tests/test_pii_mask.py`: PIIマスキングの単体テスト（電話番号/メール/クレジットカード/マイナンバー風パターン、None・空文字列のエッジケース）
-- `tests/e2e/conftest.py`: Playwrightフィクスチャ。Flaskをバックグラウンドスレッドでポート5099に起動し、ヘッドレスChromium（`locale="ja-JP"`固定）で接続
+- `tests/e2e/conftest.py`: Playwrightフィクスチャ。Flaskをバックグラウンドスレッドで空いているポート（OSが選ぶ）に起動し、ヘッドレスChromium（`locale="ja-JP"`固定）で接続
 - `tests/e2e/test_ui.py`: Playwright E2Eテスト（ページ読み込み、モード切替、エラー表示、設定API反映検証、ヘルプポップアップ開閉、重複スキップスライダー）
 - `tests/js/scan_core.test.js`: `static/scan_core.js`の単体テスト（状態遷移の可否、画像ハッシュの類似度、再試行の待ち時間、結果の指紋、表示する結果の判定）。`npm test`で実行
 
@@ -187,7 +187,7 @@ pip-compile requirements.in -o requirements-lock.txt --strip-extras --no-header
 - Vision APIの呼び出しは `unittest.mock.patch` で `requests.Session.post` をモックする
 - E2Eテストはruffの対象外（`pyproject.toml`で`tests/e2e/*`を除外）
 - mypyのスタブなしライブラリ（cachetools, PIL, dotenv, gunicorn）は`ignore_missing_imports`設定済み
-- E2Eはポート5099固定で、2つの作業フォルダで同時に走らせると衝突する。Playwrightの起動が遅いPCでは全体で15分以上かかるので、UIを変えたとき以外は`pytest tests/ --ignore=tests/e2e`と`npm test`を先に走らせる
+- Playwrightの起動が遅いPCでは全体で15分以上かかるので、UIを変えたとき以外は`pytest tests/ --ignore=tests/e2e`と`npm test`を先に走らせる
 
 ## 重要な設計パターン
 
