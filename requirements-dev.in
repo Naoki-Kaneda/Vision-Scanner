@@ -2,7 +2,7 @@
 # requirements-dev.txt は直接依存だけを手で書いている（多くは == で固定、一部は範囲指定）。ここを編集したら requirements-dev.txt も合わせる
 -r requirements.in
 pytest>=9,<10
-ruff>=0.9,<1
+ruff>=0.17.3,<1
 bandit>=1.8,<2
 pip-audit>=2.7,<3
 playwright>=1.49,<2
