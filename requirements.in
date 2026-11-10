@@ -4,6 +4,6 @@ Flask>=3.1,<4
 requests>=2.32,<3
 python-dotenv>=1.2,<2
 Pillow>=13.0,<14
-cachetools>=5.5,<6
+cachetools>=7.2.6,<8
 redis>=6.4,<7
 gunicorn>=23,<24
